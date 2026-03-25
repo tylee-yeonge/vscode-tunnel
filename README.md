@@ -1,6 +1,6 @@
 # vscode-tunnel-for-mac
 
-어디서든 VS Code로 원격 접속할 수 있는 Docker 기반 개발 환경입니다.
+어디서든 VS Code로 원격 접속할 수 있는 Docker 기반 개발 환경입니다.  
 `docker-compose.yml`의 볼륨 경로만 바꾸면 **어떤 작업 디렉토리든** VS Code tunnel을 통해 외부에서 접근할 수 있습니다.
 
 ---
@@ -15,29 +15,47 @@
 | Claude Code | 최신 버전 (native installer) |
 | 빌드 도구 | CMake, Ninja, GDB, build-essential |
 
-> ⚠️ VS Code CLI는 **ARM64(Apple Silicon Mac)** 기준으로 빌드되어 있습니다.
+> ⚠️ VS Code CLI는 **ARM64(Apple Silicon Mac)** 기준으로 빌드되어 있습니다.  
 > x86_64 환경에서는 `Dockerfile` 내 CLI 다운로드 URL의 `cli-alpine-arm64`를 `cli-alpine-x64`로 변경하세요.
 
 ---
 
 ## 🚀 빠른 시작
 
-### 1. 워크스페이스 경로 설정
+### 1. 환경 변수 파일 설정
 
-`docker-compose.yml`에서 마운트할 작업 디렉토리를 지정합니다.
+`.env.sample`을 복사하여 `.env` 파일을 만들고, 터널 이름을 지정합니다.
+
+```bash
+cp .env.sample .env
+```
+
+`.env` 파일을 열어 `TUNNEL_NAME`을 원하는 이름으로 변경합니다.
+
+```env
+TUNNEL_NAME=my-dev-tunnel   # ← 소문자, 숫자, 하이픈만 사용 가능 (전 세계 고유해야 함)
+```
+
+> 🔒 `.env` 파일은 `.gitignore`에 등록되어 있어 **Git에 커밋되지 않습니다**.  
+> 반드시 `.env.sample`만 커밋하고, 실제 값은 `.env`에 보관하세요.
+
+### 2. 워크스페이스 경로 설정 (선택)
+
+`docker-compose.yml`에서 마운트할 작업 디렉토리를 지정합니다.  
+기본값은 프로젝트 내 `./workspace` 폴더입니다.
 
 ```yaml
 volumes:
-  - /your/local/workspace:/workspace   # ← 원하는 경로로 변경
+  - ./workspace:/workspace   # ← 원하는 경로로 변경
 ```
 
-### 2. 컨테이너 빌드 & 실행
+### 3. 컨테이너 빌드 & 실행
 
 ```bash
 docker compose up -d --build
 ```
 
-### 3. VS Code tunnel 인증
+### 4. VS Code tunnel 인증
 
 컨테이너 최초 실행 시 GitHub 인증이 필요합니다.
 
@@ -45,17 +63,15 @@ docker compose up -d --build
 docker compose logs -f
 ```
 
-로그에 출력되는 URL과 코드를 브라우저에서 입력해 GitHub 계정으로 인증합니다.
+로그에 출력되는 URL과 코드를 브라우저에서 입력해 GitHub 계정으로 인증합니다.  
 인증 정보는 `vscode-cli-data` 볼륨에 저장되므로 **이후 재시작 시 재인증 불필요**합니다.
 
-### 4. 외부에서 접속
+### 5. 외부에서 접속
 
 인증 완료 후 아래 방법으로 어디서든 접속할 수 있습니다.
 
-- **브라우저**: [https://vscode.dev/tunnel/vsp-learning](https://vscode.dev/tunnel/vsp-learning)
+- **브라우저**: `https://vscode.dev/tunnel/<TUNNEL_NAME>`
 - **VS Code Desktop**: `Remote - Tunnels` 익스텐션 → 터널 이름 선택
-
-> 터널 이름은 `docker-compose.yml`의 `CMD`에서 `--name` 인자로 변경할 수 있습니다.
 
 ---
 
@@ -74,11 +90,22 @@ volumes:
 
 ## 🔧 터널 이름 변경
 
-`Dockerfile`의 마지막 `CMD` 또는 `docker-compose.yml`의 `command`에서 수정합니다.
+터널 이름은 `.env` 파일의 `TUNNEL_NAME` 변수로 관리합니다.
 
-```dockerfile
-CMD ["code", "tunnel", "--name", "my-tunnel-name", "--accept-server-license-terms"]
+```env
+# .env
+TUNNEL_NAME=my-new-tunnel-name
 ```
+
+이름 변경 후 컨테이너를 재시작하면 적용됩니다.
+
+```bash
+docker compose down
+docker compose up -d
+```
+
+> 터널 이름은 소문자, 숫자, 하이픈만 허용되며 전 세계적으로 고유해야 합니다.  
+> 기본값은 `my-vscode-tunnel`입니다 (`.env` 파일이 없을 경우 Dockerfile 기본값 사용).
 
 ---
 
@@ -90,4 +117,18 @@ docker compose down
 
 # 재시작 (재빌드 없이)
 docker compose up -d
+```
+
+---
+
+## 📁 파일 구성
+
+```
+.
+├── Dockerfile          # 이미지 정의 (Ubuntu 24.04 + OpenCV + VS Code CLI + Claude Code)
+├── docker-compose.yml  # 컨테이너 실행 설정
+├── .env                # 환경 변수 (TUNNEL_NAME 등) – Git 미포함
+├── .env.sample         # 환경 변수 템플릿 – Git 포함
+├── .gitignore          # .env, workspace/, .DS_Store 등 제외
+└── workspace/          # 컨테이너에 마운트되는 작업 디렉토리 – Git 미포함
 ```
