@@ -96,5 +96,5 @@ RUN git config --system credential.helper store
 
 WORKDIR /workspace
 
-CMD ["code", "tunnel", "--name", "vsp-learning", "--accept-server-license-terms"]
+CMD ["sh", "-c", "code tunnel --name ${TUNNEL_NAME:-my-vscode-tunnel} --accept-server-license-terms"]
 

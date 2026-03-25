@@ -10,3 +10,4 @@ workspace/
 # Credentials / secrets
 *.env
 .env.*
+!.env.sample

@@ -3,6 +3,12 @@ services:
     build: .
     container_name: vscode-tunnel
     restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      - TUNNEL_NAME=${TUNNEL_NAME}
+      # HTTPS 방식 사용 시 GitHub Personal Access Token
+      # - GIT_TOKEN=ghp_xxxxxxxxxxxx
     volumes:
       # 작업 디렉토리 마운트
       - ./workspace:/workspace
@@ -18,10 +24,6 @@ services:
 
       # Claude Code 인증 정보 공유 (호스트에서 로그인한 세션 재활용)
       - ~/.claude:/root/.claude
-
-    # HTTPS 방식 사용 시 GitHub Personal Access Token
-    # environment:
-    #   - GIT_TOKEN=ghp_xxxxxxxxxxxx
 
 volumes:
   vscode-cli-data:
