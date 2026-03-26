@@ -41,12 +41,12 @@ TUNNEL_NAME=my-dev-tunnel   # ← 소문자, 숫자, 하이픈만 사용 가능 
 
 ### 2. 워크스페이스 경로 설정 (선택)
 
-`docker-compose.yml`에서 마운트할 작업 디렉토리를 지정합니다.  
+`.env` 파일의 `WORKSPACE_PATH`로 마운트할 작업 디렉토리를 지정합니다.
 기본값은 프로젝트 내 `./workspace` 폴더입니다.
 
-```yaml
-volumes:
-  - ./workspace:/workspace   # ← 원하는 경로로 변경
+```env
+WORKSPACE_PATH=./workspace          # 기본값
+WORKSPACE_PATH=/Users/me/projects   # 또는 절대 경로 지정
 ```
 
 ### 3. 컨테이너 빌드 & 실행
@@ -79,7 +79,7 @@ docker compose logs -f
 
 ```yaml
 volumes:
-  - ./workspace:/workspace          # 작업 디렉토리 (용도에 맞게 변경)
+  - ${WORKSPACE_PATH}:/workspace     # 작업 디렉토리 (.env에서 경로 설정)
   - ~/.gitconfig:/root/.gitconfig:ro  # 호스트 git 설정 공유
   - ~/.ssh:/root/.ssh:ro            # SSH 키 공유 (git push 등)
   - vscode-cli-data:/root/.vscode-cli  # tunnel 인증 상태 유지

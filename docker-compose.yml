@@ -11,7 +11,7 @@ services:
       # - GIT_TOKEN=ghp_xxxxxxxxxxxx
     volumes:
       # 작업 디렉토리 마운트
-      - ./workspace:/workspace
+      - ${WORKSPACE_PATH}:/workspace
 
       # git config 공유 (호스트의 .gitconfig 재활용)
       - ~/.gitconfig:/root/.gitconfig:ro
