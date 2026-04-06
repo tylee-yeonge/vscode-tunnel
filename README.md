@@ -121,12 +121,31 @@ docker compose up -d
 
 ---
 
+## 🔄 자동 복구 (Watchdog)
+
+터널 프로세스가 좀비 상태가 되어 외부 접속이 불가능해지는 문제를 방지합니다.
+
+`entrypoint.sh`가 watchdog으로 동작하며, 120초마다 터널 상태를 감시합니다.
+
+| 검사 항목 | 설명 |
+|-----------|------|
+| 프로세스 생존 | 터널 프로세스가 살아있는지 확인 |
+| 프로세스 중복 | `code tunnel` 프로세스가 2개 이상이면 비정상 |
+| 터널 상태 | `code tunnel status`의 상태가 `Connected`인지 확인 |
+
+- 비정상 감지 시 터널을 자동 재시작합니다.
+- 3회 연속 복구 실패 시 컨테이너를 종료하고, Docker의 `restart: unless-stopped` 정책으로 컨테이너 자체가 재시작됩니다.
+- 초기 시작 후 5분간은 grace period를 적용하여 GitHub 인증 대기 중 오탐을 방지합니다.
+
+---
+
 ## 📁 파일 구성
 
 ```
 .
 ├── Dockerfile          # 이미지 정의 (Ubuntu 24.04 + OpenCV + VS Code CLI + Claude Code)
 ├── docker-compose.yml  # 컨테이너 실행 설정
+├── entrypoint.sh       # 터널 watchdog 스크립트 (자동 복구)
 ├── .env                # 환경 변수 (TUNNEL_NAME 등) – Git 미포함
 ├── .env.sample         # 환경 변수 템플릿 – Git 포함
 ├── .gitignore          # .env, workspace/, .DS_Store 등 제외

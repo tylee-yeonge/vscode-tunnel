@@ -9,6 +9,12 @@ services:
       - TUNNEL_NAME=${TUNNEL_NAME}
       # HTTPS 방식 사용 시 GitHub Personal Access Token
       # - GIT_TOKEN=ghp_xxxxxxxxxxxx
+    healthcheck:
+      test: ["CMD", "code", "tunnel", "status"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
     volumes:
       # 작업 디렉토리 마운트
       - ${WORKSPACE_PATH}:/workspace

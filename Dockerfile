@@ -96,5 +96,8 @@ RUN git config --system credential.helper store
 
 WORKDIR /workspace
 
-CMD ["sh", "-c", "code tunnel --name ${TUNNEL_NAME:-my-vscode-tunnel} --accept-server-license-terms"]
+COPY entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh
+
+CMD ["/usr/local/bin/entrypoint.sh"]
 
