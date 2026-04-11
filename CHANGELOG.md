@@ -1,5 +1,15 @@
 # Changelog
 
+## v1.4.0 (2026-04-11)
+
+### Added
+- GPU 자동 감지 시작 스크립트 (`start.sh`): `nvidia-smi` 존재 여부에 따라 GPU 지원 자동 활성화
+- NVIDIA GPU 오버라이드 설정 (`docker-compose.gpu.yml`)
+
+### Details
+- Mac(GPU 없음)과 Ubuntu+NVIDIA(GPU 있음) 환경에서 동일한 `./start.sh`로 컨테이너 시작 가능
+- GPU 환경에서는 `docker-compose.gpu.yml`이 자동으로 오버레이되어 컨테이너에서 CUDA 사용 가능
+
 ## v1.3.0 (2026-04-11)
 
 ### Changed
