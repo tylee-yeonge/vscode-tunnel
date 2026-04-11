@@ -1,4 +1,4 @@
-# vscode-tunnel-for-mac
+# vscode-tunnel
 
 어디서든 VS Code로 원격 접속할 수 있는 Docker 기반 개발 환경입니다.  
 `docker-compose.yml`의 볼륨 경로만 바꾸면 **어떤 작업 디렉토리든** VS Code tunnel을 통해 외부에서 접근할 수 있습니다.
@@ -11,12 +11,11 @@
 |-----------|------------|
 | Base Image | Ubuntu 24.04 |
 | OpenCV | 4.10.0 (소스 빌드, contrib 포함) |
-| VS Code CLI | stable / `cli-alpine-arm64` (Apple Silicon 기준) |
+| VS Code CLI | stable / 빌드 시 호스트 아키텍처 자동 감지 (arm64, x64) |
 | Claude Code | 최신 버전 (native installer) |
 | 빌드 도구 | CMake, Ninja, GDB, build-essential |
 
-> ⚠️ VS Code CLI는 **ARM64(Apple Silicon Mac)** 기준으로 빌드되어 있습니다.  
-> x86_64 환경에서는 `Dockerfile` 내 CLI 다운로드 URL의 `cli-alpine-arm64`를 `cli-alpine-x64`로 변경하세요.
+> VS Code CLI는 `docker build` 시 호스트 아키텍처(arm64/x64)를 자동 감지하여 설치합니다.
 
 ---
 

@@ -1,5 +1,16 @@
 # Changelog
 
+## v1.3.0 (2026-04-11)
+
+### Changed
+- VS Code CLI 설치 시 ARM64 하드코딩 제거, `TARGETARCH` 기반 멀티 아키텍처 자동 감지 (arm64/amd64)
+- 프로젝트 이름 `vscode-tunnel-for-mac` -> `vscode-tunnel`로 변경
+- README에서 ARM64 전용 경고 제거, 아키텍처 자동 감지 설명으로 대체
+
+### Details
+- `docker buildx` 또는 네이티브 빌드 시 호스트 아키텍처를 자동으로 감지하여 올바른 VS Code CLI 바이너리를 다운로드
+- Apple Silicon(arm64)뿐 아니라 x86_64(amd64) 환경에서도 별도 수정 없이 빌드 가능
+
 ## v1.2.1 (2026-04-08)
 
 ### Added

@@ -78,9 +78,15 @@ RUN cd /tmp && \
     rm -rf /tmp/opencv /tmp/opencv_contrib
 
 # ========================================
-# VS Code CLI 설치 (tunnel용, ARM64 Mac Mini M4 기준)
+# VS Code CLI 설치 (tunnel용, 호스트 아키텍처 자동 감지)
 # ========================================
-RUN curl -fsSL "https://code.visualstudio.com/sha/download?build=stable&os=cli-alpine-arm64" \
+ARG TARGETARCH
+RUN case "${TARGETARCH}" in \
+        arm64) ARCH="arm64" ;; \
+        amd64) ARCH="x64" ;; \
+        *) echo "unsupported architecture: ${TARGETARCH}" && exit 1 ;; \
+    esac && \
+    curl -fsSL "https://code.visualstudio.com/sha/download?build=stable&os=cli-alpine-${ARCH}" \
     -o /tmp/vscode-cli.tar.gz \
     && tar -xzf /tmp/vscode-cli.tar.gz -C /usr/local/bin \
     && rm /tmp/vscode-cli.tar.gz
