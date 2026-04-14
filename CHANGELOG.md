@@ -1,5 +1,22 @@
 # Changelog
 
+## v1.6.0 (2026-04-14)
+
+### Added
+- Study Timer에 Phase/Week 단위 집계 추가
+  - 일별 JSON 최상위에 `by_phase_week: Record<string, number>` 필드 신설
+  - 카테고리 키: `Studies/Phase N/weekM/` 하위 파일은 `Phase N/weekM`, 그 외는 모두 `other`
+  - 1초 tick에서 현재 활성 에디터 경로를 기준으로 카테고리 카운터 가산
+  - 불변식: `active_seconds == sum(by_phase_week.values())`
+- 노트북 에디터(`activeNotebookEditor`) fallback 추가: `.ipynb` 파일도 경로 기반으로 Phase/week에 정상 누적
+
+### Changed
+- `DayFile` 스키마 확장: `by_phase_week?: Record<string, number>` (optional, 구버전 호환)
+
+### Migration
+- v1.5.0에서 생성된 기존 파일은 로드 시 `by_phase_week = {"other": <기존 active_seconds>}`로 백필
+- nanobot은 `other`를 집계에서 제외하므로 과거 데이터가 새 집계에 섞이지 않음
+
 ## v1.5.0 (2026-04-14)
 
 ### Added

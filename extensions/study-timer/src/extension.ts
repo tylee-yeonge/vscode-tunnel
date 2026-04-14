@@ -32,6 +32,9 @@ interface DayFile {
     date: string;
     workspace: string;
     active_seconds: number;
+    // 카테고리별(Phase N/weekM 또는 other) 누적 초. nanobot에서 소비.
+    // v1.5.0 이전 파일에는 없을 수 있으므로 optional로 선언하고 로드 시 마이그레이션.
+    by_phase_week?: Record<string, number>;
     sessions: Session[];
     last_updated: string;
 }
@@ -44,6 +47,8 @@ let lastActivity = Date.now();
 let currentDate = "";
 let sessionActiveSeconds = 0;
 let currentSessionIndex = -1;
+// 카테고리별 누적 초 (하루 단위). 자정 분할 시 리셋.
+let byPhaseWeek: Record<string, number> = {};
 
 // 2자리 0-padding 헬퍼
 function pad(n: number): string {
@@ -85,6 +90,33 @@ function filePath(dateStr: string): string {
     return path.join(DATA_DIR, `${dateStr}.json`);
 }
 
+// 현재 활성 에디터 또는 노트북 에디터의 파일 경로를 반환
+// 텍스트 에디터가 우선, 없으면 노트북 에디터로 fallback
+function getActiveFsPath(): string | undefined {
+    const te = vscode.window.activeTextEditor;
+    if (te) {
+        return te.document.uri.fsPath;
+    }
+    const ne = vscode.window.activeNotebookEditor;
+    if (ne) {
+        return ne.notebook.uri.fsPath;
+    }
+    return undefined;
+}
+
+// 파일 경로에서 Phase/week 카테고리 키 추출
+// Studies/Phase N/weekM/ 하위만 분류, 그 외는 전부 "other"
+function extractCategory(fsPath: string | undefined): string {
+    if (!fsPath) {
+        return "other";
+    }
+    const m = fsPath.match(/\/Studies\/(Phase \d+)\/(week\d+)(\/|$)/);
+    if (m) {
+        return `${m[1]}/${m[2]}`;
+    }
+    return "other";
+}
+
 // 일별 JSON 파일 읽기 (없거나 파싱 실패 시 null)
 function readDayFile(dateStr: string): DayFile | null {
     const p = filePath(dateStr);
@@ -110,6 +142,17 @@ function writeDayFile(data: DayFile): void {
     fs.renameSync(tmp, p);
 }
 
+// 기존 DayFile의 by_phase_week를 런타임 상태로 로드
+// 필드가 없는 구버전 파일은 {"other": active_seconds}로 백필하여 불변식 유지
+function loadByPhaseWeek(data: DayFile): void {
+    if (data.by_phase_week && typeof data.by_phase_week === "object") {
+        byPhaseWeek = { ...data.by_phase_week };
+        return;
+    }
+    // 마이그레이션: 필드 없는 기존 파일은 전체 누적을 other로 간주
+    byPhaseWeek = data.active_seconds > 0 ? { other: data.active_seconds } : {};
+}
+
 // 세션을 시작하거나 최근 세션을 이어받아 인덱스를 기록
 // resume=true: 기존 마지막 세션이 RESUME_THRESHOLD_MS 이내면 이어받기 (activate 시)
 // resume=false: 항상 새 세션 추가 (자정 분할 시)
@@ -121,13 +164,23 @@ function initSessionForDate(
     currentDate = dateStr;
     sessionActiveSeconds = 0;
 
-    const existing: DayFile = readDayFile(dateStr) || {
+    const loaded = readDayFile(dateStr);
+    const existing: DayFile = loaded || {
         date: dateStr,
         workspace: WORKSPACE_NAME,
         active_seconds: 0,
+        by_phase_week: {},
         sessions: [],
         last_updated: localISOString(new Date()),
     };
+
+    // 기존 파일이 있으면 by_phase_week 로드 (구버전 마이그레이션 포함)
+    // 자정 분할(resume=false)이며 새 날짜 파일이 없는 경우에는 빈 객체로 시작
+    if (loaded) {
+        loadByPhaseWeek(loaded);
+    } else {
+        byPhaseWeek = {};
+    }
 
     // 이어받기 조건: activate 직후 && 기존 마지막 세션의 end가 최근
     if (resume && existing.sessions.length > 0) {
@@ -139,24 +192,26 @@ function initSessionForDate(
         ) {
             currentSessionIndex = existing.sessions.length - 1;
             sessionActiveSeconds = last.active_seconds;
+            existing.by_phase_week = byPhaseWeek;
             existing.last_updated = localISOString(new Date());
             writeDayFile(existing);
             return;
         }
     }
 
-    // 새 세션 추가
+    // 새 세션 추가 (하루 누적 by_phase_week는 유지)
     existing.sessions.push({
         start: localISOString(sessStart),
         end: localISOString(sessStart),
         active_seconds: 0,
     });
     currentSessionIndex = existing.sessions.length - 1;
+    existing.by_phase_week = byPhaseWeek;
     existing.last_updated = localISOString(new Date());
     writeDayFile(existing);
 }
 
-// 현재 세션의 end/active_seconds를 파일에 반영
+// 현재 세션의 end/active_seconds 및 byPhaseWeek를 파일에 반영
 function flush(endDate?: Date): void {
     const data = readDayFile(currentDate);
     if (!data) {
@@ -168,6 +223,7 @@ function flush(endDate?: Date): void {
         data.sessions[currentSessionIndex].active_seconds = sessionActiveSeconds;
     }
     data.active_seconds = data.sessions.reduce((s, x) => s + x.active_seconds, 0);
+    data.by_phase_week = byPhaseWeek;
     data.last_updated = localISOString(new Date());
     writeDayFile(data);
 }
@@ -187,6 +243,9 @@ function tick(): void {
     const idle = now.getTime() - lastActivity >= IDLE_THRESHOLD_MS;
     if (focused && !idle) {
         sessionActiveSeconds++;
+        // 현재 활성 에디터의 카테고리에도 1초 가산 (불변식 유지)
+        const category = extractCategory(getActiveFsPath());
+        byPhaseWeek[category] = (byPhaseWeek[category] ?? 0) + 1;
     }
 }
 

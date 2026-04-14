@@ -140,6 +140,14 @@ docker compose down
 - 자정을 넘기면 세션을 두 파일로 분할 기록합니다.
 - VS Code reload 등으로 extension이 재활성화될 때 같은 날 마지막 세션의 `end`가 5분 이내면 그 세션을 이어받습니다 (세션 중복 방지).
 
+### Phase/Week 집계 (`by_phase_week`)
+- 1초 tick마다 현재 활성 에디터(텍스트 또는 노트북)의 파일 경로를 확인해 카테고리별 누적 초를 함께 기록합니다.
+- 카테고리 키 규칙
+  - `Studies/Phase N/weekM/...` 하위 파일 -> `"Phase N/weekM"`
+  - 그 외(Roadmap, README, 활성 에디터 없음 등) -> `"other"`
+- 불변식: `active_seconds == sum(by_phase_week.values())`
+- nanobot/MCP 쪽에서는 `other`를 집계에서 제외하고 `Phase N/weekM` 키만 사용하는 것을 권장합니다.
+
 ### 저장 경로 / 포맷
 - 경로: `/root/.study-timer/YYYY-MM-DD.json` (docker named volume `study-timer-data`)
 - 호스트 timezone을 상속하므로 모든 타임스탬프와 날짜 경계는 로컬 TZ 기준입니다.
@@ -149,6 +157,11 @@ docker compose down
   "date": "2026-04-14",
   "workspace": "visual-slam-and-perception-learning",
   "active_seconds": 5400,
+  "by_phase_week": {
+    "Phase 1/week2": 3000,
+    "Phase 2/week1": 2000,
+    "other": 400
+  },
   "sessions": [
     {
       "start": "2026-04-14T09:00:00+09:00",
