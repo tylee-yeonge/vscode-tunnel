@@ -3,6 +3,7 @@
 
 # Docker runtime / local data
 workspace/
+docker-compose.local.yml
 
 # macOS
 .DS_Store

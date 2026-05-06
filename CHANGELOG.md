@@ -1,5 +1,42 @@
 # Changelog
 
+## v1.7.0 (2026-05-06)
+
+### Added
+- Multi-host 머신별 분기 지원 — Mac mini와 Ubuntu 데스크탑에서 동일 vscode-tunnel 리포를 git 충돌 없이 운영
+  - `BASE_IMAGE` 환경변수: Dockerfile 최상단에 `ARG BASE_IMAGE=ubuntu:24.04` 도입, `docker-compose.yml`의 `build.args`로 주입. 머신별 `.env`로만 분기되므로 Dockerfile은 commit된 한 벌만 유지
+  - `DATASETS_PATH` 환경변수 + `docker-compose.local.yml`(gitignored) 패턴: 머신별 데이터셋 마운트를 `.env`로 분기. 컨테이너 내부 경로는 `/datasets`로 고정해 코드의 절대경로 참조가 양쪽 머신에서 일관됨
+- Multi-host Study Timer 사이드카 (nanobot-docker 리포의 `multi-host-plan.md` Phase 1 연계)
+  - `docker-compose.tailscale.yml` 신규: nginx alpine으로 기존 `study-timer-data` named volume을 read-only HTTP(`:8765`)로 노출. `external: true`로 메인 stack 볼륨 재사용
+  - `study-timer-nginx.conf` 신규: `autoindex on; autoindex_format json;` + `Cache-Control: no-cache`로 nanobot의 list 도구가 단일 GET으로 날짜 인덱스 획득
+  - `TAILSCALE_IP` 환경변수로 포트 바인딩(`${TAILSCALE_IP}:8765:80`) → Tailnet 인터페이스에만 노출, LAN/외부 차단
+- `start.sh` 자동 감지 확장 (누적 `-f` 방식, POSIX sh 유지)
+  - GPU 감지 → `docker-compose.gpu.yml` (기존 동작 보존)
+  - `docker-compose.local.yml` 존재 시 자동 적용
+  - `.env`의 활성 `TAILSCALE_IP=` 라인 감지 시 `docker-compose.tailscale.yml` 자동 적용
+  - 각 단계는 표준 메시지로 보고 (`"GPU detected: ..."` / `"Local override detected: ..."` / `"Tailscale sidecar detected: ..."`)
+- `UBUNTU_SETUP.md`에 3-5 (Study Timer 사이드카 활성화 절차) 신규 섹션 추가
+
+### Changed
+- `Dockerfile`: Stage 2의 `FROM ubuntu:24.04` → `FROM ${BASE_IMAGE}` (기본값 동일)
+- `docker-compose.yml`: `build: .` → `build.args.BASE_IMAGE: ${BASE_IMAGE:-ubuntu:24.04}` 형태로 변경
+- `.env.sample`: `BASE_IMAGE` / `DATASETS_PATH` / `TAILSCALE_IP` 안내 주석 추가 (모두 코멘트 처리, 미설정 시 기존 동작)
+- `.gitignore`: `docker-compose.local.yml` 무시 항목 추가
+- `README.md` 전면 개편: 환경변수 표, start.sh 자동 감지 표, 머신별 오버라이드 패턴 섹션, 파일 구성에 신규 파일 반영
+- `UBUNTU_SETUP.md` 재작성: 사전 조건 단축(docker compose v2 / docker 그룹 / NTP), 3-3을 `.env`의 `BASE_IMAGE` 한 줄 방식으로, 3-4를 `docker-compose.local.yml` + `${DATASETS_PATH}` 패턴으로 재서술, 운영 팁에 사이드카 절차 통합
+
+### Removed
+- `~/.codex` 호스트 마운트 제거 (사용자가 OpenAI Codex CLI 미사용). 호스트 `~/.codex` 디렉토리는 그대로 보존되며, 향후 필요 시 `docker-compose.yml`에 라인 한 줄 복원으로 즉시 재마운트 가능
+
+### Design notes
+- 머신별 사이드카 분기를 compose `profiles:` 대신 별도 commit 파일(`docker-compose.tailscale.yml`)로 분리한 이유: profile 비활성 상태에서도 변수 치환이 평가되어 Mac에서 `${TAILSCALE_IP}:8765:80` 빈 IP 검증 이슈가 발생할 수 있음. `start.sh`가 `-f`로 얹는 방식이면 Mac은 파일을 아예 로드하지 않아 치환 시도 자체가 일어나지 않음. 기존 `docker-compose.gpu.yml`과 동일 패턴
+- Ubuntu 권장 베이스 이미지를 `nvidia/cuda:12.4.1-cudnn-devel-ubuntu24.04`로 정했음. PyTorch 2.5/2.6 공식 wheel + cuDNN 9 + Mac 기본 OS와 동일한 ubuntu 24.04 → 한 Dockerfile이 양쪽에서 동일하게 빌드. Phase 4의 mmcv-full은 사전 빌드 wheel 부재 시 source build 가능 (devel)
+
+### Migration
+- **기존 Mac mini**: `.env` 변경 불필요. 모든 신규 변수가 선택이며 미설정 시 `ubuntu:24.04` + 단일 docker-compose.yml로 기존 동작 그대로
+- **Ubuntu 신규 셋업**: `UBUNTU_SETUP.md` 참조. `.env`에 `BASE_IMAGE=nvidia/cuda:12.4.1-cudnn-devel-ubuntu24.04` + 필요 시 `DATASETS_PATH=/data/datasets` + (사이드카 활성화 시) `TAILSCALE_IP=<tailscale ip -4 결과>` 추가
+- nanobot-docker 리포의 `multi-host-plan.md` Phase 2 (custom-tools.js 다중 source 머지)는 별도 리포 작업으로 분리
+
 ## v1.6.0 (2026-04-14)
 
 ### Added

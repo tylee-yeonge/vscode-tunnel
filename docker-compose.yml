@@ -1,6 +1,9 @@
 services:
   vscode-tunnel:
-    build: .
+    build:
+      context: .
+      args:
+        BASE_IMAGE: ${BASE_IMAGE:-ubuntu:24.04}
     container_name: vscode-tunnel
     restart: unless-stopped
     env_file:
@@ -38,9 +41,6 @@ services:
 
       # Claude Code 인증 정보 공유 (호스트에서 로그인한 세션 재활용)
       - ~/.claude:/root/.claude
-
-      # Codex 인증 정보 공유 (호스트에서 로그인한 세션 재활용)
-      - ~/.codex:/root/.codex
 
       # Study Timer 일별 JSON 저장소 (nanobot-docker가 external volume으로 공유)
       - study-timer-data:/root/.study-timer
