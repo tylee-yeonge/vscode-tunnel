@@ -1,5 +1,24 @@
 # Changelog
 
+## v1.7.3 (2026-05-07)
+
+### Fixed
+- `docker-compose.tailscale.yml`이 `study-timer-data` 볼륨을 `external: true`로
+  재선언해 메인 compose의 자동 생성 정의를 덮던 버그 수정
+  - 증상: 사용자가 볼륨을 한 번 정리(`docker volume rm study-timer-data`)하면
+    `./start.sh` 재기동 시 `external volume "study-timer-data" not found` 에러
+    발생 (compose가 외부 사전 존재를 요구하므로 새로 만들지 못함)
+  - 원인: multi-file compose 머지에서 후순위 파일의 `external: true`가 메인의
+    생성 정의를 override
+- `docker-compose.tailscale.yml`의 top-level `volumes:` 선언 제거. 메인
+  `docker-compose.yml`이 단일 owner로 볼륨 생성을 책임. `start.sh`가 항상 메인을
+  먼저 `-f`로 얹기 때문에 사이드카는 service 블록의 볼륨 참조만으로 충분
+
+### Migration
+- Ubuntu에서 v1.7.2 이후 `docker volume rm study-timer-data` 후 기동 실패한 경우:
+  `git pull` → `./start.sh` (이번엔 메인 compose가 볼륨을 새로 만들어 주므로 정상)
+- 이미 볼륨이 살아있는 호스트는 영향 없음 (둘 다 같은 볼륨을 가리킴)
+
 ## v1.7.2 (2026-05-07)
 
 ### Fixed

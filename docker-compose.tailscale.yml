@@ -18,7 +18,7 @@ services:
       retries: 3
       start_period: 10s
 
-volumes:
-  study-timer-data:
-    name: study-timer-data
-    external: true
+# study-timer-data 볼륨의 top-level 선언은 메인 docker-compose.yml에 있음
+# (start.sh가 항상 -f docker-compose.yml -f docker-compose.tailscale.yml 순서로
+# 머지하므로 여기서 재선언/external 표기를 하면 오히려 메인의 생성 정의를 덮어
+# 볼륨 부재 시 "external volume not found" 에러 발생).
