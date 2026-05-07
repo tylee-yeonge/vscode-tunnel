@@ -1,5 +1,42 @@
 # Changelog
 
+## v1.7.2 (2026-05-07)
+
+### Fixed
+- study-timer 사이드카 활성화 시 `study-timer-data` 볼륨이 nginx 기본 파일
+  (`index.html`, `50x.html`)로 오염되던 버그 수정
+  - 원인: `docker-compose.tailscale.yml`이 볼륨을 nginx 이미지의 기본 html 경로
+    `/usr/share/nginx/html`에 mount. Docker는 **빈 named volume이 처음 mount될 때
+    이미지의 해당 경로 파일을 볼륨으로 복사**하므로 nginx alpine의 기본 html이
+    study-timer-data 볼륨으로 들어감 (`:ro` 플래그는 mount 이후에만 적용되어
+    초기 복사를 막지 못함)
+  - 결과: vscode-tunnel 컨테이너의 `/root/.study-timer/`에 무관한 `index.html` /
+    `50x.html`이 보이고, 사이드카 HTTP 응답에 같은 파일이 노출됨
+- 사이드카 mount 경로를 nginx 이미지에 존재하지 않는 `/srv/study-timer`로 변경,
+  `study-timer-nginx.conf`의 `root`도 동일하게 맞춤. 이미지에 해당 경로가 없으므로
+  복사 자체가 발생하지 않음
+
+### Migration
+이미 사이드카를 활성화해 볼륨이 오염된 호스트(주로 Ubuntu)는 다음 절차로 정리:
+
+```bash
+# 1. 모든 컨테이너 정지
+docker compose -f docker-compose.yml -f docker-compose.gpu.yml \
+  -f docker-compose.local.yml -f docker-compose.tailscale.yml down
+
+# 2. 오염된 볼륨 제거 (study-timer JSON이 아직 없으니 손실 없음)
+docker volume rm study-timer-data
+
+# 3. 최신 코드 pull
+git pull
+
+# 4. 정상 재기동
+./start.sh
+```
+
+`study-timer-data`에 이미 의미 있는 JSON이 누적된 호스트라면 볼륨 제거 대신
+오염 파일만 삭제: `docker exec vscode-tunnel rm -f /root/.study-timer/index.html /root/.study-timer/50x.html`
+
 ## v1.7.1 (2026-05-07)
 
 ### Fixed

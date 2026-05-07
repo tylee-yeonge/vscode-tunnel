@@ -7,7 +7,9 @@ services:
       # Tailnet 인터페이스에만 노출. LAN/외부 차단.
       - "${TAILSCALE_IP}:8765:80"
     volumes:
-      - study-timer-data:/usr/share/nginx/html:ro
+      # study-timer-data를 nginx 이미지의 기본 html 경로가 아닌 /srv/study-timer에
+      # mount → 빈 볼륨이 nginx 기본 파일로 오염되는 것을 회피
+      - study-timer-data:/srv/study-timer:ro
       - ./study-timer-nginx.conf:/etc/nginx/conf.d/default.conf:ro
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost/"]
