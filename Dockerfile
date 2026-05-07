@@ -1,6 +1,6 @@
 # 빌드 베이스 이미지. 머신별 .env의 BASE_IMAGE로 오버라이드 가능
 # 기본값: ubuntu:24.04 (Mac/CPU)
-# CUDA 학습용: nvidia/cuda:12.4.1-cudnn-devel-ubuntu24.04
+# CUDA 학습용: nvidia/cuda:12.6.3-cudnn-devel-ubuntu24.04
 ARG BASE_IMAGE=ubuntu:24.04
 
 # ========================================

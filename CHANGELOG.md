@@ -1,5 +1,26 @@
 # Changelog
 
+## v1.7.1 (2026-05-07)
+
+### Fixed
+- 권장 베이스 이미지 태그를 실제 NVIDIA Docker Hub에 발행된 조합으로 정정
+  - 변경 전: `nvidia/cuda:12.4.1-cudnn-devel-ubuntu24.04` (해당 태그 미발행)
+  - 변경 후: `nvidia/cuda:12.6.3-cudnn-devel-ubuntu24.04`
+- NVIDIA Hub에서 ubuntu24.04 + cudnn-devel 변종은 12.6.0부터 발행되어 12.4 시리즈와는
+  조합되지 않음을 확인
+- v1.7.0 시점에 추천한 12.4.1 태그로 `./start.sh` 실행 시 발생하던 빌드 실패 해소
+  (`failed to resolve source metadata: ... not found`)
+
+### Changed
+- `Dockerfile`의 주석, `.env.sample`, `README.md`, `UBUNTU_SETUP.md`의 BASE_IMAGE 안내를
+  12.6.3로 일괄 갱신
+- PyTorch 2.6 공식 wheel이 CUDA 12.6을 지원하므로 학습 환경 측면에서도 동등 이상의 선택
+
+### Migration
+- 기존 `.env`에 `BASE_IMAGE=nvidia/cuda:12.4.1-cudnn-devel-ubuntu24.04` 설정한 경우
+  `12.6.3`으로 교체 후 `./start.sh` 재실행
+- `BASE_IMAGE` 미설정 머신(Mac mini 등)은 영향 없음
+
 ## v1.7.0 (2026-05-06)
 
 ### Added

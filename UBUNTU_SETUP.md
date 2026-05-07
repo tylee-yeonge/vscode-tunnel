@@ -109,7 +109,7 @@ cd vscode-tunnel
 TUNNEL_NAME=ubuntu-dev
 WORKSPACE_PATH=/home/<user>/workspace
 TZ=Asia/Seoul
-BASE_IMAGE=nvidia/cuda:12.4.1-cudnn-devel-ubuntu24.04
+BASE_IMAGE=nvidia/cuda:12.6.3-cudnn-devel-ubuntu24.04
 DATASETS_PATH=/data/datasets
 # TAILSCALE_IP=100.x.y.z   # 3-5 사이드카 활성화 시 코멘트 해제
 ```
@@ -124,14 +124,16 @@ DATASETS_PATH=/data/datasets
 `.env`의 `BASE_IMAGE` 한 줄로 분기. Dockerfile은 commit된 한 벌만 유지 (Mac은
 미설정 시 기본값 `ubuntu:24.04`).
 
-권장: **`nvidia/cuda:12.4.1-cudnn-devel-ubuntu24.04`**
+권장: **`nvidia/cuda:12.6.3-cudnn-devel-ubuntu24.04`**
 
-- CUDA 12.4 + cuDNN devel + ubuntu 24.04 (Mac 기본 OS와 동일 → 한 Dockerfile
+- CUDA 12.6 + cuDNN 9 + devel + ubuntu 24.04 (Mac 기본 OS와 동일 → 한 Dockerfile
   양쪽 빌드 가능)
-- Phase 3/4 의존성(PyTorch 2.5/2.6, ultralytics, transformers, mmcv-full 등)을
+- NVIDIA Hub에서 ubuntu24.04 + cudnn-devel 변종은 12.6.0부터 발행됨. 12.6.3은
+  12.6 시리즈의 안정 패치 마지막 버전
+- Phase 3/4 의존성(PyTorch 2.6, ultralytics, transformers, mmcv-full 등)을
   포괄적으로 커버. mmcv-full은 사전 빌드 wheel 부재 시 source build 필요하나
   devel 이미지라 가능
-- 드라이버 ≥ 550 충족 시 동작 (RTX 4070 + driver 580 OK)
+- 드라이버 ≥ 560 충족 시 동작 (RTX 4070 + driver 580 OK)
 
 ### 3-4. 데이터셋 볼륨 마운트 (선택, `DATASETS_PATH`)
 머신별 호스트 경로를 git에 commit하지 않기 위해 `docker-compose.local.yml`(gitignored)
