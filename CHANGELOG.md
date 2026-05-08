@@ -46,6 +46,16 @@
   owner를 컨테이너 프로세스 UID(root)로 자동 매핑하지만, Linux native Docker는
   호스트 UID를 1:1로 그대로 노출. 컨테이너 root(0)와 다른 UID로 보이므로
   git의 ownership 체크와 ssh의 권한 체크가 모두 거부
+- VS Code remote tunnel에서 Study Timer extension이 비활성화되어 일별 JSON이
+  생성되지 않던 버그 수정
+  - 증상: 4월 29일 이후 `/root/.study-timer/`에 일별 JSON이 더 이상 쌓이지 않음
+    (워크스페이스 진입 + 코드 활동에도 불구하고 파일 미생성)
+  - 원인: entrypoint가 extension 디렉토리를 `~/.vscode-server/extensions/`로
+    복사만 하고 `extensions.json` 레지스트리에는 등록하지 않음. VS Code remote
+    agent는 디렉토리만으로는 활성화하지 않고 매 세션마다
+    `Marked extension as removed local.study-timer-0.0.1`로 처리하여 activate가
+    호출되지 않음. 4월 29일까지는 레지스트리에 우연히 살아있던 항목 덕에
+    동작했으나 5월 들어 vscode-server가 `extensions.json`을 재작성하면서 누락됨
 
 ### Changed
 - `Dockerfile`: `git config --system --add safe.directory '*'`를 빌드 시점에
@@ -58,6 +68,14 @@
 - `entrypoint.sh`: `setup_ssh()` 함수 추가. 컨테이너 시작 시
   `/root/.ssh-host` → `/root/.ssh`로 복사하고 `chown root:root` + `0700/0600/0644`
   로 SSH 표준 권한을 강제. 컨테이너 로컬 디스크에 복사된 사본을 SSH가 사용
+- `entrypoint.sh`: `register_study_timer_extension()` 함수 추가. extension
+  디렉토리 복사 직후 `extensions.json` 레지스트리에 study-timer 엔트리를
+  idempotent하게 upsert (`/root/.vscode-server/extensions/`와
+  `/root/.vscode/extensions/` 양쪽 모두). 기존 엔트리의 `installedTimestamp`는
+  보존하여 불필요한 재설치 시그널 방지. JSON 손상 시 빈 배열로 자동 복구하고
+  등록 검증 실패 시 fail-fast로 컨테이너 종료
+- `Dockerfile`: 첫 apt-get install 블록에 `jq` 패키지 추가
+  (`extensions.json` upsert에 사용)
 
 ### Notes
 - macOS Docker Desktop 환경은 회귀 없음
@@ -67,6 +85,8 @@
     `chmod`는 더 엄격한 방향으로 정합되어 SSH 검증 통과
 - `safe.directory '*'`로 모든 경로의 ownership 체크를 해제했으나, 컨테이너는
   격리된 root 환경이고 `/workspace`만 외부에서 노출되므로 추가 위험 없음
+- Study Timer 등록은 매 컨테이너 시작마다 보장되므로 vscode-server가
+  `extensions.json`을 자동으로 재작성해도 다음 재시작에 자동 복구됨
 
 ### Migration
 - Ubuntu/Linux 호스트:
@@ -78,6 +98,9 @@
   ```
   컨테이너 재진입 후 `git status` / `git pull origin main`이 정상 동작해야 함
 - macOS 호스트: 변경 없음 (재빌드만 권장, 동작 동일)
+- 모든 호스트: 재빌드 후 `visual-slam-and-perception-learning` 워크스페이스로
+  진입하면 study-timer 일별 JSON이 다시 누적됨. 누락 구간(4월 30일 ~ 5월 7일)의
+  데이터는 복구 불가
 
 ## v1.7.3 (2026-05-07)
 
