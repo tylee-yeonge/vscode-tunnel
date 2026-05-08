@@ -12,7 +12,9 @@ services:
       - study-timer-data:/srv/study-timer:ro
       - ./study-timer-nginx.conf:/etc/nginx/conf.d/default.conf:ro
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost/"]
+      # localhost는 ::1로도 풀려 IPv6 우선 시도하다 refused 됨. nginx가 IPv4 only로
+      # listen하므로 127.0.0.1을 명시해 IPv6 fallback 없는 busybox wget에서도 동작하게.
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1/"]
       interval: 60s
       timeout: 5s
       retries: 3

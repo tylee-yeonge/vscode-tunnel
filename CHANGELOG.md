@@ -1,5 +1,36 @@
 # Changelog
 
+## v1.7.5 (2026-05-08)
+
+### Fixed
+- `study-timer-http` 사이드카가 정상 동작 중에도 Docker가 `unhealthy`로 표시하던
+  헬스체크 false-negative 수정
+  - 증상: `docker ps`에서 `Up X minutes (unhealthy)`. 실제로는 `${TAILSCALE_IP}:8765/`
+    HTTP 200 OK 응답 정상
+  - 원인: 헬스체크가 `wget http://localhost/`를 사용. 컨테이너 `/etc/hosts`에
+    `localhost`가 IPv4(`127.0.0.1`)와 IPv6(`::1`) 양쪽으로 매핑되어 있어 busybox
+    wget이 IPv6 먼저 시도. nginx alpine 이미지의 entrypoint가 read-only로
+    bind-mount된 `default.conf`에 IPv6 listener를 추가하지 못해 IPv4-only로
+    listen → `::1:80`에서 connection refused. busybox wget은 IPv4 fallback 없이
+    종료하여 retries 한도(3회)까지 모두 실패
+  - 결과: 사이드카 본체는 정상이지만 healthcheck 가시성을 신뢰할 수 없어
+    모니터링/오케스트레이션 도구가 잘못된 판단(예: 자동 재시작)을 할 수 있음
+
+### Changed
+- `docker-compose.tailscale.yml`: 헬스체크 URL을 `http://localhost/` →
+  `http://127.0.0.1/`로 교체. nginx의 IPv4 listener와 정합되어 사이드카가
+  `healthy`로 정상 표기됨. 동작 자체는 v1.7.4와 동일
+
+### Migration
+- TAILSCALE_IP 사이드카 사용자:
+  ```bash
+  git pull
+  ./start.sh   # study-timer-http 컨테이너만 recreate 됨
+  ```
+  `docker ps` 출력에서 `study-timer-http` 가 `Up X seconds (healthy)` 로
+  표시되는지 확인
+- 비사용자(`.env`에 `TAILSCALE_IP` 미설정): 영향 없음
+
 ## v1.7.4 (2026-05-08)
 
 ### Fixed

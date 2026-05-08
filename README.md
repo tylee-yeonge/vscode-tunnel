@@ -230,6 +230,24 @@ volumes:
 
 vscode-tunnel 컨테이너를 먼저 기동해 볼륨이 생성된 이후에 nanobot compose를 올리면 됩니다.
 
+### Multi-host HTTP 노출 (`study-timer-http` 사이드카)
+
+`.env`에 `TAILSCALE_IP`가 설정된 호스트에서는 `study-timer-http` 사이드카가 자동
+기동되어 `http://${TAILSCALE_IP}:8765/`로 `study-timer-data` 볼륨의
+`YYYY-MM-DD.json` 파일을 nginx autoindex(JSON)로 노출합니다.
+
+| 항목 | 내용 |
+|------|------|
+| 노출 IP | `${TAILSCALE_IP}` (Tailnet 인터페이스에만 바인딩, LAN/외부 차단) |
+| 포트 | `8765` → 컨테이너 `:80` |
+| 응답 | `study-timer-data` 볼륨의 `YYYY-MM-DD.json` 파일 (read-only) |
+| 헬스체크 | `wget http://127.0.0.1/` 1분 주기 (IPv4 명시) |
+
+> 헬스체크가 `localhost` 대신 `127.0.0.1`을 쓰는 이유: nginx alpine은 read-only
+> bind-mount된 `default.conf` 때문에 IPv6 listener를 추가하지 못해 IPv4-only로
+> listen 합니다. busybox wget이 `localhost`를 IPv6(`::1`)로 먼저 시도하면 fallback
+> 없이 실패하여 false `unhealthy`가 발생합니다 (v1.7.5 fix).
+
 ---
 
 ## 자동 복구 (Watchdog)
