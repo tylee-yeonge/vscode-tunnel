@@ -30,7 +30,9 @@ services:
       - ~/.gitconfig:/root/.gitconfig:ro
 
       # SSH 키 공유 (git push용, SSH 방식 사용 시)
-      - ~/.ssh:/root/.ssh:ro
+      # 호스트 UID 노출로 인한 "Bad owner or permissions" 회피를 위해
+      # 별도 경로로 마운트하고 entrypoint에서 권한 보정 후 /root/.ssh로 복사
+      - ~/.ssh:/root/.ssh-host:ro
 
       # VS Code tunnel 인증 상태 유지 (재시작 시 재로그인 방지)
       # 실제 인증 토큰은 /root/.vscode/cli/token.json 등에 저장됨

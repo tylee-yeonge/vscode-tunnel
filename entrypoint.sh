@@ -13,6 +13,86 @@ STARTUP_GRACE=300    # 초기 시작 후 헬스체크 면제 시간 (초, 인증
 retry_count=0
 start_time=0
 
+# 호스트의 ~/.ssh를 /root/.ssh-host로 마운트하고 컨테이너 root 소유로 복사
+# Linux 호스트에서 bind mount된 파일의 UID/perms가 그대로 노출되어
+# SSH가 "Bad owner or permissions" 에러로 거부하는 문제를 회피하기 위함
+setup_ssh() {
+    [ -d /root/.ssh-host ] || return 0
+    mkdir -p /root/.ssh
+    cp -aT /root/.ssh-host /root/.ssh
+    chown -R root:root /root/.ssh
+    chmod 700 /root/.ssh
+    # private key, config 등은 0600
+    find /root/.ssh -type f ! -name 'known_hosts*' ! -name '*.pub' \
+        -exec chmod 600 {} \;
+    # 공개키와 known_hosts는 0644
+    find /root/.ssh -type f \( -name 'known_hosts*' -o -name '*.pub' \) \
+        -exec chmod 644 {} \;
+    echo "[entrypoint] SSH 키 복사 및 권한 보정 완료"
+}
+
+# extensions.json 레지스트리에 study-timer 엔트리를 idempotent하게 upsert
+# VS Code remote agent는 디렉토리만으로는 활성화하지 않고 이 레지스트리에
+# 등록된 항목만 활성화하므로, 매 컨테이너 시작마다 등록을 보장한다.
+# 기존 등록의 installedTimestamp는 보존하여 불필요한 재설치 시그널을 막는다.
+register_study_timer_extension() {
+    EXT_ID="local.study-timer"
+    EXT_VERSION="0.0.1"
+    EXT_DIR_NAME="local.study-timer-0.0.1"
+    NOW_TS=$(date +%s)000
+
+    for EXT_BASE in "/root/.vscode-server/extensions" "/root/.vscode/extensions"; do
+        REG="$EXT_BASE/extensions.json"
+        # 파일이 없거나 비어있으면 빈 배열로 초기화
+        if [ ! -s "$REG" ]; then
+            echo "[]" > "$REG"
+        fi
+        # 기존 JSON이 손상된 경우에도 복구 가능하도록 빈 배열로 강제
+        if ! jq -e 'type == "array"' "$REG" > /dev/null 2>&1; then
+            echo "[entrypoint] $REG 손상 감지, 빈 배열로 재초기화"
+            echo "[]" > "$REG"
+        fi
+
+        TMP="${REG}.tmp"
+        jq --arg id "$EXT_ID" \
+           --arg ver "$EXT_VERSION" \
+           --arg path "$EXT_BASE/$EXT_DIR_NAME" \
+           --arg rel "$EXT_DIR_NAME" \
+           --argjson nowTs "$NOW_TS" \
+           '
+           . as $orig
+           | ($orig | map(select(.identifier.id == $id))[0].metadata.installedTimestamp // $nowTs) as $ts
+           | $orig
+           | map(select(.identifier.id != $id))
+           | . + [{
+               "identifier": { "id": $id },
+               "version": $ver,
+               "location": { "$mid": 1, "path": $path, "scheme": "file" },
+               "relativeLocation": $rel,
+               "metadata": {
+                 "isApplicationScoped": false,
+                 "isMachineScoped": false,
+                 "isBuiltin": false,
+                 "installedTimestamp": $ts,
+                 "pinned": false,
+                 "source": "resource",
+                 "private": false,
+                 "isPreReleaseVersion": false,
+                 "hasPreReleaseVersion": false,
+                 "preRelease": false
+               }
+             }]
+           ' "$REG" > "$TMP" && mv "$TMP" "$REG"
+
+        # 등록 검증: 실패 시 fail-fast
+        if ! jq -e --arg id "$EXT_ID" 'any(.[]; .identifier.id == $id)' "$REG" > /dev/null; then
+            echo "[entrypoint] FATAL: $REG 에 $EXT_ID 등록 실패"
+            return 1
+        fi
+    done
+    return 0
+}
+
 # Study Timer extension을 VS Code server extensions 디렉토리에 배치
 # tunnel CLI는 --install-extension을 지원하지 않으므로 직접 복사 방식 사용
 deploy_study_timer() {
@@ -24,10 +104,15 @@ deploy_study_timer() {
         rm -rf "$DEST/$EXT_NAME"
         cp -r "$SRC" "$DEST/$EXT_NAME"
     done
+    # extensions.json 레지스트리에 등록 (디렉토리만으로는 활성화 안 됨)
+    if ! register_study_timer_extension; then
+        echo "[entrypoint] study-timer 레지스트리 등록 실패, 컨테이너 종료"
+        exit 1
+    fi
     # 데이터 디렉토리 (named volume 마운트 대상) 보장
     mkdir -p /root/.study-timer
     chmod 755 /root/.study-timer
-    echo "[entrypoint] study-timer extension 배치 완료"
+    echo "[entrypoint] study-timer extension 배치 및 등록 완료"
 }
 
 start_tunnel() {
@@ -109,6 +194,9 @@ cleanup() {
     exit 0
 }
 trap cleanup TERM INT
+
+# SSH 키 권한 보정 (tunnel 시작 전)
+setup_ssh
 
 # Study Timer extension 배치 (tunnel 시작 전)
 deploy_study_timer

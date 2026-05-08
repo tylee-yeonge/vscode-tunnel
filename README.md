@@ -89,7 +89,7 @@ docker compose logs -f
 volumes:
   - ${WORKSPACE_PATH}:/workspace             # 작업 디렉토리 (.env에서 경로 설정)
   - ~/.gitconfig:/root/.gitconfig:ro         # 호스트 git 설정 공유
-  - ~/.ssh:/root/.ssh:ro                     # SSH 키 공유 (git push 등)
+  - ~/.ssh:/root/.ssh-host:ro                # SSH 키 (entrypoint가 /root/.ssh로 복사하며 권한 보정)
   - vscode-cli-data:/root/.vscode/cli        # tunnel 인증 상태 유지
   - vscode-server-data:/root/.vscode-server  # VS Code 서버/익스텐션 데이터 유지
   - ~/.claude:/root/.claude                  # Claude Code 인증 공유

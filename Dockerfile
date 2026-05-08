@@ -35,6 +35,7 @@ RUN apt-get update && apt-get install -y \
     pkg-config \
     ca-certificates \
     openssh-client \
+    jq \
     && rm -rf /var/lib/apt/lists/*
 
 # ========================================
@@ -116,8 +117,10 @@ RUN case "${TARGETARCH}" in \
 RUN curl -fsSL https://claude.ai/install.sh | bash
 ENV PATH="/root/.local/bin:${PATH}"
 
-# git credential helper
-RUN git config --system credential.helper store
+# git credential helper + bind mount된 /workspace 등의 dubious ownership 우회
+# (호스트 UID와 컨테이너 root UID가 다른 Linux 호스트에서 git이 거부하는 문제 방지)
+RUN git config --system credential.helper store \
+ && git config --system --add safe.directory '*'
 
 WORKDIR /workspace
 

@@ -1,5 +1,53 @@
 # Changelog
 
+## v1.7.4 (2026-05-08)
+
+### Fixed
+- Linux 호스트(Ubuntu 등)에서 컨테이너 내 git/ssh가 거부되던 두 가지 문제 수정
+  - 증상 1 (git): `/workspace` 하위 레포에서
+    `fatal: detected dubious ownership in repository at ...` 발생
+  - 증상 2 (ssh): `git pull` 시 `Bad owner or permissions on /root/.ssh/config`
+    로 원격 접근 실패
+  - 회피 시도 시 `git config --global --add safe.directory ...`도
+    `error: could not write config file /root/.gitconfig: Device or resource busy`
+    로 실패 (`~/.gitconfig`가 `:ro` bind mount이기 때문)
+- 원인: macOS Docker Desktop은 VirtioFS 레이어가 bind mount된 호스트 파일의
+  owner를 컨테이너 프로세스 UID(root)로 자동 매핑하지만, Linux native Docker는
+  호스트 UID를 1:1로 그대로 노출. 컨테이너 root(0)와 다른 UID로 보이므로
+  git의 ownership 체크와 ssh의 권한 체크가 모두 거부
+
+### Changed
+- `Dockerfile`: `git config --system --add safe.directory '*'`를 빌드 시점에
+  주입해 dubious ownership 체크를 영구 비활성화. `:ro` 마운트인 `~/.gitconfig`
+  대신 `/etc/gitconfig`(system level)에 기록하므로 호스트 git 설정은 그대로
+  보존되고 read-only 마운트와도 충돌하지 않음
+- `docker-compose.yml`: `~/.ssh:/root/.ssh:ro` → `~/.ssh:/root/.ssh-host:ro`
+  로 마운트 경로를 분리. `:ro` 유지하여 호스트 키는 보호하되, 컨테이너에서
+  권한 보정이 가능한 별도 경로에 노출
+- `entrypoint.sh`: `setup_ssh()` 함수 추가. 컨테이너 시작 시
+  `/root/.ssh-host` → `/root/.ssh`로 복사하고 `chown root:root` + `0700/0600/0644`
+  로 SSH 표준 권한을 강제. 컨테이너 로컬 디스크에 복사된 사본을 SSH가 사용
+
+### Notes
+- macOS Docker Desktop 환경은 회귀 없음
+  - `safe.directory '*'`는 ownership 체크를 한 번 더 통과시키는 no-op
+  - SSH 마운트 경로 변경은 `:ro` 그대로라 호스트 파일 영향 없음
+  - `setup_ssh`의 `chown`은 macOS에서 어차피 root로 보이므로 no-op,
+    `chmod`는 더 엄격한 방향으로 정합되어 SSH 검증 통과
+- `safe.directory '*'`로 모든 경로의 ownership 체크를 해제했으나, 컨테이너는
+  격리된 root 환경이고 `/workspace`만 외부에서 노출되므로 추가 위험 없음
+
+### Migration
+- Ubuntu/Linux 호스트:
+  ```bash
+  git pull
+  docker compose down
+  docker compose build --no-cache vscode-tunnel
+  ./start.sh
+  ```
+  컨테이너 재진입 후 `git status` / `git pull origin main`이 정상 동작해야 함
+- macOS 호스트: 변경 없음 (재빌드만 권장, 동작 동일)
+
 ## v1.7.3 (2026-05-07)
 
 ### Fixed
