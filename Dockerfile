@@ -36,6 +36,7 @@ RUN apt-get update && apt-get install -y \
     ca-certificates \
     openssh-client \
     jq \
+    unzip \
     && rm -rf /var/lib/apt/lists/*
 
 # ========================================
@@ -98,6 +99,19 @@ RUN cd /tmp && \
     rm -rf /tmp/opencv /tmp/opencv_contrib
 
 # ========================================
+# Python 패키지: nuScenes devkit, rerun (자율주행 데이터셋/시각화)
+# Ubuntu 24.04의 PEP 668 보호를 우회하기 위해 --break-system-packages 사용
+# (이미지 전용 환경이고 OpenCV가 이미 system Python에 cv2를 설치한 상태이므로
+#  venv 분리는 cv2 사용을 막아 부적합)
+# ========================================
+RUN apt-get update && apt-get install -y \
+    python3-pip \
+    && rm -rf /var/lib/apt/lists/* \
+    && pip install --no-cache-dir --break-system-packages \
+        nuscenes-devkit \
+        rerun-sdk
+
+# ========================================
 # VS Code CLI 설치 (tunnel용, 호스트 아키텍처 자동 감지)
 # ========================================
 ARG TARGETARCH
@@ -121,6 +135,21 @@ ENV PATH="/root/.local/bin:${PATH}"
 # (호스트 UID와 컨테이너 root UID가 다른 Linux 호스트에서 git이 거부하는 문제 방지)
 RUN git config --system credential.helper store \
  && git config --system --add safe.directory '*'
+
+# ========================================
+# 타임존 고정 (Asia/Seoul)
+# ubuntu:24.04 기본 /etc/localtime이 Etc/UTC를 가리키는 상태로 남아있어,
+# IANA tz 이름을 /etc/localtime 심볼릭 링크에서 추출하는 도구(예: code tunnel CLI의
+# iana-time-zone crate)가 UTC로 동작하는 문제가 발생함. 이미지 단에서 영구 고정.
+# 캐시 무효화 영향 최소화를 위해 OpenCV 빌드 이후 단계에 배치.
+# ========================================
+ARG TZ=Asia/Seoul
+ENV TZ=${TZ}
+RUN apt-get update && apt-get install -y --no-install-recommends tzdata \
+    && ln -sf /usr/share/zoneinfo/${TZ} /etc/localtime \
+    && echo "${TZ}" > /etc/timezone \
+    && dpkg-reconfigure -f noninteractive tzdata \
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /workspace
 

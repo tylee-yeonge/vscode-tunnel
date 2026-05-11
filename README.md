@@ -94,9 +94,12 @@ volumes:
   - vscode-server-data:/root/.vscode-server  # VS Code 서버/익스텐션 데이터 유지
   - ~/.claude:/root/.claude                  # Claude Code 인증 공유
   - study-timer-data:/root/.study-timer      # Study Timer 일별 JSON 저장소
-  - /etc/localtime:/etc/localtime:ro         # 호스트 timezone 상속
-  - /etc/timezone:/etc/timezone:ro
 ```
+
+> Timezone은 Dockerfile에서 `Asia/Seoul`로 영구 고정됩니다 (`.env`의 `TZ`로
+> 오버라이드 가능). 이전에 사용하던 `/etc/localtime`/`/etc/timezone` bind mount는
+> 호스트/컨테이너 측 심볼릭 링크 dereference 차이로 의도와 다르게 동작하여
+> v1.7.6에서 제거했습니다.
 
 ---
 
@@ -191,7 +194,7 @@ docker compose down
 
 ### 저장 경로 / 포맷
 - 경로: `/root/.study-timer/YYYY-MM-DD.json` (docker named volume `study-timer-data`)
-- 호스트 timezone을 상속하므로 모든 타임스탬프와 날짜 경계는 로컬 TZ 기준입니다.
+- 컨테이너 timezone(`Asia/Seoul`, Dockerfile에서 고정)을 사용하므로 모든 타임스탬프와 날짜 경계는 로컬 TZ 기준입니다.
 
 ```json
 {

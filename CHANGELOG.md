@@ -1,5 +1,57 @@
 # Changelog
 
+## v1.7.6 (2026-05-12)
+
+### Fixed
+- 컨테이너 timezone 설정이 어긋나 `code tunnel` CLI 등 일부 컴포넌트가 UTC로
+  동작하던 문제 수정
+  - 증상: `TZ=Asia/Seoul` 환경변수와 `date` 출력은 KST 정상이지만, `code tunnel`
+    CLI의 stdout 로그 timestamp(`[2026-05-11 15:19:50]` 형태)가 UTC로 찍히고
+    `/etc/localtime`이 `/usr/share/zoneinfo/Etc/UTC`를 가리키는 심볼릭 링크로
+    남아있음
+  - 원인: `ubuntu:24.04` 베이스 이미지의 기본 `/etc/localtime`이 `Etc/UTC`를
+    가리키는 상태 그대로였고, docker-compose의
+    `/etc/localtime:/etc/localtime:ro` bind mount가 호스트 측 심볼릭 링크와
+    컨테이너 측 심볼릭 링크를 모두 dereference하면서 호스트 KST 데이터가
+    컨테이너의 `/usr/share/zoneinfo/Etc/UTC` 위에 마운트되는 의도치 않은 동작
+    발생. 결과적으로 `iana-time-zone` 기반 도구가 `/etc/localtime` 심볼릭 링크
+    이름("Etc/UTC")을 IANA tz 이름으로 추출 → UTC로 동작
+
+### Changed
+- `Dockerfile`: 이미지 빌드 시점에 `tzdata` 설치 + `/etc/localtime` 심볼릭 링크를
+  `Asia/Seoul`로 영구 고정 + `dpkg-reconfigure -f noninteractive tzdata` 적용.
+  `ARG TZ=Asia/Seoul`로 빌드 시 다른 timezone으로 오버라이드 가능. 캐시
+  무효화 영향 최소화를 위해 OpenCV 빌드 이후 단계에 배치
+- `docker-compose.yml`: 잘못 동작하던 `/etc/localtime`/`/etc/timezone` bind
+  mount 두 줄 제거. timezone은 이제 이미지에 내장되어 마운트 불필요
+- `docker-compose.yml`: `TZ` 환경변수 주석을 새 동작에 맞게 정리
+  (Node 등 TZ 환경변수를 따르는 프로세스용이며 `/etc/localtime`과 일치)
+- `README.md`: 볼륨 구성 표에서 timezone 마운트 라인 제거. Study Timer
+  섹션의 "호스트 timezone 상속" 문구를 "Dockerfile에서 고정"으로 정정
+
+### Notes
+- `code tunnel` CLI 바이너리(Microsoft, Rust)는 timestamp를 **UTC로
+  hardcoded**하여 출력한다. `/etc/localtime`/`TZ`와 무관하게 UTC로 찍히며
+  외부에서 변경 불가. 따라서 `docker compose logs vscode-tunnel`에 표시되는
+  CLI 로그의 timestamp는 v1.7.6 이후에도 여전히 UTC. KST로 환산하려면
+  +9시간 가산 필요
+- CLI 로그를 제외한 다른 모든 컴포넌트(`date`, Python, Node, vscode-server의
+  로그 디렉토리명 `YYYYMMDDTHHMMSS`, study-timer 익스텐션의 일별 JSON 등)는
+  KST로 정상 동작함을 v1.7.6 적용 후 검증
+
+### Migration
+- 모든 사용자: 컨테이너 재빌드와 재기동이 필요
+  ```bash
+  git pull
+  docker compose build
+  ./start.sh
+  ```
+  - OpenCV 빌드 이후 단계 변경이라 캐시가 살아남아 재빌드는 빠르게 끝남
+  - 컨테이너 재생성 후 GitHub tunnel device flow 재인증이 요구될 수 있음
+    (`docker compose logs -f`에 표시되는 코드로 진행)
+- 검증: `docker exec vscode-tunnel ls -la /etc/localtime`이
+  `/usr/share/zoneinfo/Asia/Seoul`을 가리키는지 확인
+
 ## v1.7.5 (2026-05-08)
 
 ### Fixed

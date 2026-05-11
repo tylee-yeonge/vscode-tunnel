@@ -10,9 +10,8 @@ services:
       - .env
     environment:
       - TUNNEL_NAME=${TUNNEL_NAME}
-      # 타임존 (호스트와 동일하게 맞춰 자정 경계/타임스탬프 처리)
-      # /etc/localtime 마운트는 되어 있으나 VS Code server Node 프로세스가
-      # TZ 환경변수를 우선시하므로 명시적으로 설정
+      # 타임존: Node 등 TZ 환경변수를 따르는 프로세스용. /etc/localtime은
+      # Dockerfile에서 같은 값으로 영구 고정되어 있으므로 둘이 일치.
       - TZ=${TZ:-Asia/Seoul}
       # HTTPS 방식 사용 시 GitHub Personal Access Token
       # - GIT_TOKEN=ghp_xxxxxxxxxxxx
@@ -47,9 +46,9 @@ services:
       # Study Timer 일별 JSON 저장소 (nanobot-docker가 external volume으로 공유)
       - study-timer-data:/root/.study-timer
 
-      # 호스트 timezone 상속 (자정 경계 및 타임스탬프 로컬 TZ 기준 처리)
-      - /etc/localtime:/etc/localtime:ro
-      - /etc/timezone:/etc/timezone:ro
+      # 타임존은 Dockerfile에서 ARG TZ로 이미지에 영구 고정함.
+      # 호스트의 /etc/localtime은 심볼릭 링크라 bind mount 시 컨테이너 내부
+      # 심볼릭 링크와 충돌하여 IANA tz 추론을 망가뜨리므로 마운트하지 않는다.
 
 volumes:
   vscode-cli-data:
