@@ -3,8 +3,8 @@ import * as fs from "fs";
 import * as path from "path";
 
 // 측정 대상 워크스페이스 경로 (컨테이너 내부 기준)
-const TARGET_WORKSPACE = "/workspace/study/visual-slam-and-perception-learning";
-const WORKSPACE_NAME = "visual-slam-and-perception-learning";
+const TARGET_WORKSPACE = "/workspace/study/physical-ai-study";
+const WORKSPACE_NAME = "physical-ai-study";
 
 // 데이터 저장 디렉토리 (docker named volume 마운트 지점)
 const DATA_DIR = "/root/.study-timer";

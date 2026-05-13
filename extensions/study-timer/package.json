@@ -1,7 +1,7 @@
 {
     "name": "study-timer",
     "displayName": "Study Timer",
-    "description": "visual-slam-and-perception-learning 워크스페이스의 실사용 시간을 측정하여 일별 JSON으로 저장",
+    "description": "physical-ai-study 워크스페이스의 실사용 시간을 측정하여 일별 JSON으로 저장",
     "version": "0.0.1",
     "publisher": "local",
     "engines": {

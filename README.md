@@ -174,7 +174,7 @@ docker compose down
 특정 워크스페이스에서의 실사용 시간을 자동 측정하여 일별 JSON 파일로 저장하는 내장 VS Code extension입니다.
 
 ### 대상 워크스페이스
-- 컨테이너 내부 경로: `/workspace/study/visual-slam-and-perception-learning`
+- 컨테이너 내부 경로: `/workspace/study/physical-ai-study`
 - 이 경로가 최상위 폴더인 VS Code 창에서만 활성화됩니다.
 
 ### 측정 규칙
@@ -199,7 +199,7 @@ docker compose down
 ```json
 {
   "date": "2026-04-14",
-  "workspace": "visual-slam-and-perception-learning",
+  "workspace": "physical-ai-study",
   "active_seconds": 5400,
   "by_phase_week": {
     "Phase 1/week2": 3000,

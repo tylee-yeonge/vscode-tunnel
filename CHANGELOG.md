@@ -1,5 +1,43 @@
 # Changelog
 
+## v1.7.7 (2026-05-13)
+
+### Changed
+- Study Timer 대상 워크스페이스를 `visual-slam-and-perception-learning`에서
+  `physical-ai-study`로 변경 (GitHub 레포 rename에 따라)
+  - `extensions/study-timer/src/extension.ts`: `TARGET_WORKSPACE`,
+    `WORKSPACE_NAME` 상수 두 줄 업데이트
+  - `extensions/study-timer/package.json`: description 워크스페이스 이름 갱신
+  - `README.md`: Study Timer 섹션의 컨테이너 경로 / JSON 예시 갱신
+- 옛 워크스페이스 경로(`/workspace/study/visual-slam-and-perception-learning`)는
+  더 이상 추적되지 않음 — 그 경로에서 VS Code 창을 열어도 Study Timer는 비활성
+
+### Migration
+- 기존 사용자(`study-timer-data` 볼륨 보유):
+  ```bash
+  # 1. 컨테이너 정지
+  docker compose down
+
+  # 2. 볼륨에 쌓인 일별 JSON의 `workspace` 필드 일괄 치환
+  docker run --rm \
+    -v study-timer-data:/data \
+    alpine sh -c "apk add --no-cache jq >/dev/null && \
+      for f in /data/*.json; do \
+        tmp=\$(mktemp); \
+        jq '.workspace = \"physical-ai-study\"' \"\$f\" > \"\$tmp\" && \
+        mv \"\$tmp\" \"\$f\"; \
+      done"
+
+  # 3. 호스트 워크스페이스 디렉토리 rename
+  #    (구) workspace/study/visual-slam-and-perception-learning
+  #    (신) workspace/study/physical-ai-study
+  #    이후 새 디렉토리 안에서 git remote set-url origin <new-url>
+
+  # 4. 재기동
+  ./start.sh
+  ```
+- 신규 사용자: 영향 없음 (처음부터 새 이름으로 동작)
+
 ## v1.7.6 (2026-05-12)
 
 ### Fixed
