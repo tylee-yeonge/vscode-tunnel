@@ -36,7 +36,7 @@ interface DayFile {
     date: string;
     workspace: string;
     active_seconds: number;
-    // 카테고리별(Phase N/weekM 또는 other) 누적 초. nanobot에서 소비.
+    // 카테고리별(Phase N/weekM, Hardware-Arm/stageN, 또는 other) 누적 초. nanobot에서 소비.
     // v1.5.0 이전 파일에는 없을 수 있으므로 optional로 선언하고 로드 시 마이그레이션.
     by_phase_week?: Record<string, number>;
     sessions: Session[];
@@ -109,15 +109,21 @@ function getActiveFsPath(): string | undefined {
     return undefined;
 }
 
-// 파일 경로에서 Phase/week 카테고리 키 추출
-// Studies/Phase N/weekM/ 하위만 분류, 그 외는 전부 "other"
+// 파일 경로에서 카테고리 키 추출
+// Studies/Phase N/weekM/ 하위는 "Phase N/weekM",
+// Studies/Hardware-Arm/stageN/ 하위는 "Hardware-Arm/stageN",
+// 그 외(Hardware-Arm 최상위 문서 포함)는 "other" 로 귀속
 function extractCategory(fsPath: string | undefined): string {
     if (!fsPath) {
         return "other";
     }
-    const m = fsPath.match(/\/Studies\/(Phase \d+)\/(week\d+)(\/|$)/);
-    if (m) {
-        return `${m[1]}/${m[2]}`;
+    const phaseMatch = fsPath.match(/\/Studies\/(Phase \d+)\/(week\d+)(\/|$)/);
+    if (phaseMatch) {
+        return `${phaseMatch[1]}/${phaseMatch[2]}`;
+    }
+    const armMatch = fsPath.match(/\/Studies\/Hardware-Arm\/(stage\d+)(\/|$)/);
+    if (armMatch) {
+        return `Hardware-Arm/${armMatch[1]}`;
     }
     return "other";
 }

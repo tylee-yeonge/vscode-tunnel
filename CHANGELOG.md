@@ -1,5 +1,31 @@
 # Changelog
 
+## v1.8.1 (2026-05-14)
+
+### Added
+- Study Timer 카테고리 분류에 `Hardware-Arm/stageN` 키 추가
+  - `Studies/Hardware-Arm/stageN/` 하위 파일은 `by_phase_week`에서
+    `"Hardware-Arm/stageN"` 카테고리로 누적
+  - `Studies/Hardware-Arm/` 최상위 문서(README 등)는 기존과 동일하게 `"other"`로 귀속
+  - 기존 `Studies/Phase N/weekM/` 분류 규칙은 변경 없음
+
+### Changed
+- `extensions/study-timer/src/extension.ts`의 `extractCategory()` 함수가 두 개의
+  정규식(Phase / Hardware-Arm)을 순차 매칭하도록 확장. `DayFile.by_phase_week`
+  주석도 새 카테고리 키를 반영하여 갱신
+- nanobot/외부 소비자는 영향 없음 (`by_phase_week` 키 집합만 확장,
+  스키마/불변식은 그대로 — `active_seconds == sum(by_phase_week.values())`)
+
+### Migration
+- 기존 사용자: 컨테이너 이미지 재빌드 필요
+  ```bash
+  docker compose down
+  docker compose build vscode-tunnel
+  ./start.sh
+  ```
+- 기존 일별 JSON은 그대로 사용 가능. 재빌드 이후 `Hardware-Arm/stageN` 하위에서
+  발생한 활동부터 새 키로 누적
+
 ## v1.8.0 (2026-05-14)
 
 ### Fixed

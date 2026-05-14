@@ -188,9 +188,10 @@ docker compose down
 - 1초 tick마다 현재 활성 에디터(텍스트 또는 노트북)의 파일 경로를 확인해 카테고리별 누적 초를 함께 기록합니다.
 - 카테고리 키 규칙
   - `Studies/Phase N/weekM/...` 하위 파일 -> `"Phase N/weekM"`
-  - 그 외(Roadmap, README, 활성 에디터 없음 등) -> `"other"`
+  - `Studies/Hardware-Arm/stageN/...` 하위 파일 -> `"Hardware-Arm/stageN"`
+  - 그 외(Roadmap, README, Hardware-Arm 최상위 문서, 활성 에디터 없음 등) -> `"other"`
 - 불변식: `active_seconds == sum(by_phase_week.values())`
-- nanobot/MCP 쪽에서는 `other`를 집계에서 제외하고 `Phase N/weekM` 키만 사용하는 것을 권장합니다.
+- nanobot/MCP 쪽에서는 `other`를 집계에서 제외하고 `Phase N/weekM` / `Hardware-Arm/stageN` 키만 사용하는 것을 권장합니다.
 
 ### 저장 경로 / 포맷
 - 경로: `/root/.study-timer/YYYY-MM-DD.json` (docker named volume `study-timer-data`)
@@ -203,7 +204,8 @@ docker compose down
   "active_seconds": 5400,
   "by_phase_week": {
     "Phase 1/week2": 3000,
-    "Phase 2/week1": 2000,
+    "Phase 2/week1": 1000,
+    "Hardware-Arm/stage1": 1000,
     "other": 400
   },
   "sessions": [
