@@ -1,5 +1,44 @@
 # Changelog
 
+## v1.8.0 (2026-05-14)
+
+### Fixed
+- Study Timer가 같은 워크스페이스를 두 VS Code 창에서 열 때 `active_seconds`가
+  덮어쓰기 충돌로 누적되지 않거나 오히려 감소하는 문제 수정
+  - 증상: 09:02 시작 세션에서 11:35에 5875초까지 누적됐다가 15초 뒤 다시
+    4829초로 감소, 이후 `end`와 `last_updated`는 갱신되지만
+    `active_seconds`는 4829에 고정
+  - 원인: 같은 컨테이너에서 두 개의 `extensionHost`가 동시에 실행되면 두
+    인스턴스 모두 `currentSessionIndex = 0`(마지막 세션)을 자기 것으로 잡고
+    `data.sessions[0].active_seconds = sessionActiveSeconds`로 절대값을
+    덮어쓰기. 사용자가 활동하는 창의 인스턴스가 5875를 쓴 직후, 다른 창의
+    idle 인스턴스가 자기 메모리상의 4829로 덮어쓰면서 진행이 지워짐
+  - 해결: 각 `extensionHost` 활성화마다 고유 `instance_id`를 부여하고
+    `sessions[]`에 자기만의 세션을 항상 새로 추가. flush 시 자기 `instance_id`와
+    매칭되는 세션만 갱신. `by_phase_week`는 인스턴스별 마지막 flush 이후
+    delta만 가산하여 다중 인스턴스 합산을 보존. top-level `active_seconds`는
+    `sum(sessions[].active_seconds)`로 항상 재계산
+  - VS Code reload 시 같은 마지막 세션을 이어받던 RESUME 로직 제거 — 두
+    인스턴스가 같은 세션을 공유하는 본질적 충돌을 막기 위함. reload마다 새
+    세션이 추가되지만 `deactivate`에서 0초짜리 세션은 정리
+
+### Changed
+- `Session` 인터페이스에 optional `instance_id` 필드 추가
+  - 구버전(v1.7.x 이하) 파일의 기존 세션은 `instance_id` 없이 그대로 남으며
+    합산에는 정상적으로 포함됨 (자기 인스턴스 매칭 대상에서만 제외)
+  - nanobot/외부 소비자는 영향 없음 (`active_seconds`, `by_phase_week`,
+    `sessions[].active_seconds` 합산 의미 불변)
+
+### Migration
+- 기존 사용자: 컨테이너 이미지 재빌드 필요
+  ```bash
+  docker compose down
+  docker compose build vscode-tunnel
+  ./start.sh
+  ```
+- 5월 14일 이전에 이중 인스턴스 충돌로 손실된 `active_seconds`는 복구되지
+  않음 — 향후 측정만 정확해짐
+
 ## v1.7.7 (2026-05-13)
 
 ### Changed

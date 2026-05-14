@@ -182,7 +182,7 @@ docker compose down
 - 1초 단위로 `active_seconds` 누적, 30초 주기로 파일에 atomic write
 - idle로는 세션이 끊기지 않고 카운트만 중단되므로, PC를 옮기거나 자리를 비워도 자연스럽게 측정 중단됩니다.
 - 자정을 넘기면 세션을 두 파일로 분할 기록합니다.
-- VS Code reload 등으로 extension이 재활성화될 때 같은 날 마지막 세션의 `end`가 5분 이내면 그 세션을 이어받습니다 (세션 중복 방지).
+- 각 extension 활성화(activate)는 자기만의 `instance_id`로 표시된 세션을 새로 추가하며, flush 시 자기 세션의 `active_seconds`/`end`만 갱신합니다. 같은 워크스페이스를 두 VS Code 창에서 열어도 각 창이 독립된 세션을 가지므로 충돌 없이 합산됩니다. reload로 0초짜리 세션이 남는 경우 `deactivate` 시 정리합니다.
 
 ### Phase/Week 집계 (`by_phase_week`)
 - 1초 tick마다 현재 활성 에디터(텍스트 또는 노트북)의 파일 경로를 확인해 카테고리별 누적 초를 함께 기록합니다.

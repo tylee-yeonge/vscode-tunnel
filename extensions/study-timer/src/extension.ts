@@ -18,14 +18,18 @@ const TICK_INTERVAL_MS = 1000;
 // 30초 주기로 파일 flush (비정상 종료 시 최대 30초 손실)
 const FLUSH_INTERVAL_MS = 30 * 1000;
 
-// activate 시 최근 N분 이내에 업데이트된 세션은 이어받기
-// (VS Code reload 등으로 deactivate 없이 재활성화될 때 세션 중복 방지)
-const RESUME_THRESHOLD_MS = 5 * 60 * 1000;
+// extensionHost 한 활성화 인스턴스를 식별하는 고유 ID.
+// 같은 워크스페이스를 두 창에서 열면 두 인스턴스가 동시에 동작하므로,
+// 각자의 세션을 instance_id로 구분하여 서로 다른 세션만 갱신하도록 한다.
+const INSTANCE_ID = `${process.pid}-${Math.random().toString(36).slice(2, 8)}`;
 
 interface Session {
     start: string;
     end: string;
     active_seconds: number;
+    // 이 세션을 만든 extensionHost 인스턴스 식별자.
+    // 구버전(v1.7.x 이하) 파일에는 없을 수 있음.
+    instance_id?: string;
 }
 
 interface DayFile {
@@ -46,9 +50,10 @@ let focused = true;
 let lastActivity = Date.now();
 let currentDate = "";
 let sessionActiveSeconds = 0;
-let currentSessionIndex = -1;
-// 카테고리별 누적 초 (하루 단위). 자정 분할 시 리셋.
-let byPhaseWeek: Record<string, number> = {};
+// 이 인스턴스가 활동하면서 카테고리별로 +1씩 누적한 카운트 (오늘 자기 인스턴스 한정).
+// flush 시 lastFlushed와의 delta만 파일의 by_phase_week에 가산하여 다중 인스턴스 합산을 보존.
+let myCategoryCounts: Record<string, number> = {};
+let myCategoryCountsAtLastFlush: Record<string, number> = {};
 
 // 2자리 0-padding 헬퍼
 function pad(n: number): string {
@@ -142,30 +147,32 @@ function writeDayFile(data: DayFile): void {
     fs.renameSync(tmp, p);
 }
 
-// 기존 DayFile의 by_phase_week를 런타임 상태로 로드
-// 필드가 없는 구버전 파일은 {"other": active_seconds}로 백필하여 불변식 유지
-function loadByPhaseWeek(data: DayFile): void {
-    if (data.by_phase_week && typeof data.by_phase_week === "object") {
-        byPhaseWeek = { ...data.by_phase_week };
-        return;
-    }
-    // 마이그레이션: 필드 없는 기존 파일은 전체 누적을 other로 간주
-    byPhaseWeek = data.active_seconds > 0 ? { other: data.active_seconds } : {};
+// sessions 합으로 top-level active_seconds 재계산
+function sumSessions(data: DayFile): number {
+    return data.sessions.reduce((s, x) => s + x.active_seconds, 0);
 }
 
-// 세션을 시작하거나 최근 세션을 이어받아 인덱스를 기록
-// resume=true: 기존 마지막 세션이 RESUME_THRESHOLD_MS 이내면 이어받기 (activate 시)
-// resume=false: 항상 새 세션 추가 (자정 분할 시)
-function initSessionForDate(
-    dateStr: string,
-    sessStart: Date,
-    resume: boolean
-): void {
+// 구버전(v1.5.0 이전) by_phase_week 누락 파일을 in-place로 마이그레이션
+// 불변식 active_seconds == sum(by_phase_week)을 유지하기 위해 누락 분은 "other"로 귀속
+function ensureByPhaseWeek(data: DayFile): void {
+    if (data.by_phase_week && typeof data.by_phase_week === "object") {
+        return;
+    }
+    data.by_phase_week = data.active_seconds > 0 ? { other: data.active_seconds } : {};
+}
+
+// 자기 인스턴스 세션을 새로 추가하고 currentSessionIndex를 기록
+// 다중 인스턴스 충돌을 막기 위해 activate/자정 분할 모두 항상 새 세션을 만든다.
+// (구버전의 RESUME 로직은 두 인스턴스가 같은 세션을 공유하여 active_seconds가
+//  서로 덮어쓰이는 문제가 있어 v1.8.0에서 제거)
+function initSessionForDate(dateStr: string, sessStart: Date): void {
     currentDate = dateStr;
     sessionActiveSeconds = 0;
+    myCategoryCounts = {};
+    myCategoryCountsAtLastFlush = {};
 
     const loaded = readDayFile(dateStr);
-    const existing: DayFile = loaded || {
+    const data: DayFile = loaded || {
         date: dateStr,
         workspace: WORKSPACE_NAME,
         active_seconds: 0,
@@ -174,56 +181,56 @@ function initSessionForDate(
         last_updated: localISOString(new Date()),
     };
 
-    // 기존 파일이 있으면 by_phase_week 로드 (구버전 마이그레이션 포함)
-    // 자정 분할(resume=false)이며 새 날짜 파일이 없는 경우에는 빈 객체로 시작
-    if (loaded) {
-        loadByPhaseWeek(loaded);
-    } else {
-        byPhaseWeek = {};
-    }
+    ensureByPhaseWeek(data);
 
-    // 이어받기 조건: activate 직후 && 기존 마지막 세션의 end가 최근
-    if (resume && existing.sessions.length > 0) {
-        const last = existing.sessions[existing.sessions.length - 1];
-        const lastEndMs = Date.parse(last.end);
-        if (
-            !isNaN(lastEndMs) &&
-            Date.now() - lastEndMs <= RESUME_THRESHOLD_MS
-        ) {
-            currentSessionIndex = existing.sessions.length - 1;
-            sessionActiveSeconds = last.active_seconds;
-            existing.by_phase_week = byPhaseWeek;
-            existing.last_updated = localISOString(new Date());
-            writeDayFile(existing);
-            return;
-        }
-    }
-
-    // 새 세션 추가 (하루 누적 by_phase_week는 유지)
-    existing.sessions.push({
+    // 자기 인스턴스의 새 세션 추가
+    data.sessions.push({
         start: localISOString(sessStart),
         end: localISOString(sessStart),
         active_seconds: 0,
+        instance_id: INSTANCE_ID,
     });
-    currentSessionIndex = existing.sessions.length - 1;
-    existing.by_phase_week = byPhaseWeek;
-    existing.last_updated = localISOString(new Date());
-    writeDayFile(existing);
+    data.active_seconds = sumSessions(data);
+    data.last_updated = localISOString(new Date());
+    writeDayFile(data);
 }
 
-// 현재 세션의 end/active_seconds 및 byPhaseWeek를 파일에 반영
+// 현재 인스턴스가 만든 세션을 instance_id로 찾는다. 없으면 -1.
+function findMySessionIndex(data: DayFile): number {
+    return data.sessions.findIndex((s) => s.instance_id === INSTANCE_ID);
+}
+
+// 자기 세션의 end/active_seconds 및 by_phase_week delta를 파일에 반영
 function flush(endDate?: Date): void {
     const data = readDayFile(currentDate);
     if (!data) {
         return;
     }
-    const now = endDate ?? new Date();
-    if (currentSessionIndex >= 0 && currentSessionIndex < data.sessions.length) {
-        data.sessions[currentSessionIndex].end = localISOString(now);
-        data.sessions[currentSessionIndex].active_seconds = sessionActiveSeconds;
+    ensureByPhaseWeek(data);
+
+    const myIdx = findMySessionIndex(data);
+    if (myIdx < 0) {
+        // 외부에서 자기 세션이 사라진 경우(예: 다른 도구가 파일을 재작성).
+        // 다음 tick에서 새로 만들기보다 그냥 이번 flush는 건너뛴다 — 다음 자정 분할에서 정상화됨.
+        return;
     }
-    data.active_seconds = data.sessions.reduce((s, x) => s + x.active_seconds, 0);
-    data.by_phase_week = byPhaseWeek;
+
+    const now = endDate ?? new Date();
+    data.sessions[myIdx].end = localISOString(now);
+    data.sessions[myIdx].active_seconds = sessionActiveSeconds;
+
+    // by_phase_week: 이 인스턴스가 마지막 flush 이후 증가시킨 분(delta)만 가산
+    const bpw = data.by_phase_week!;
+    for (const [k, v] of Object.entries(myCategoryCounts)) {
+        const prev = myCategoryCountsAtLastFlush[k] ?? 0;
+        const delta = v - prev;
+        if (delta > 0) {
+            bpw[k] = (bpw[k] ?? 0) + delta;
+        }
+    }
+    myCategoryCountsAtLastFlush = { ...myCategoryCounts };
+
+    data.active_seconds = sumSessions(data);
     data.last_updated = localISOString(new Date());
     writeDayFile(data);
 }
@@ -236,16 +243,16 @@ function tick(): void {
     // 자정 경계: 현재 세션을 23:59:59로 마감하고 새 날짜에 새 세션 시작
     if (todayStr !== currentDate) {
         flush(endOfLocalDay(currentDate));
-        initSessionForDate(todayStr, startOfLocalDay(todayStr), false);
+        initSessionForDate(todayStr, startOfLocalDay(todayStr));
     }
 
     // focus 상태이고 최근 5분 이내 활동이 있었으면 active
     const idle = now.getTime() - lastActivity >= IDLE_THRESHOLD_MS;
     if (focused && !idle) {
         sessionActiveSeconds++;
-        // 현재 활성 에디터의 카테고리에도 1초 가산 (불변식 유지)
+        // 현재 활성 에디터의 카테고리에도 1초 가산 (sessionActiveSeconds와 짝지어 불변식 유지)
         const category = extractCategory(getActiveFsPath());
-        byPhaseWeek[category] = (byPhaseWeek[category] ?? 0) + 1;
+        myCategoryCounts[category] = (myCategoryCounts[category] ?? 0) + 1;
     }
 }
 
@@ -268,8 +275,8 @@ export function activate(context: vscode.ExtensionContext): void {
     focused = vscode.window.state.focused;
     lastActivity = now.getTime();
 
-    // 세션 시작 (최근 세션 이어받기 시도, 없으면 새 세션 추가)
-    initSessionForDate(localDateString(now), now, true);
+    // 자기 인스턴스의 새 세션 시작 (다중 인스턴스 충돌 방지를 위해 항상 새로 추가)
+    initSessionForDate(localDateString(now), now);
 
     // 활동 이벤트 구독: 발생 시 lastActivity 갱신
     const bump = () => {
@@ -292,26 +299,40 @@ export function activate(context: vscode.ExtensionContext): void {
     tickTimer = setInterval(tick, TICK_INTERVAL_MS);
     flushTimer = setInterval(() => flush(), FLUSH_INTERVAL_MS);
 
-    // dispose 시 타이머 정리 및 최종 flush
+    // dispose 시 타이머 정리 및 최종 flush + 빈 세션 정리
     context.subscriptions.push({
         dispose: () => {
-            if (tickTimer) {
-                clearInterval(tickTimer);
-            }
-            if (flushTimer) {
-                clearInterval(flushTimer);
-            }
-            flush();
+            shutdown();
         },
     });
 }
 
-export function deactivate(): void {
+// 타이머 정리, 최종 flush, 그리고 이 인스턴스가 만든 0초짜리 세션 제거.
+// reload/창 닫기 시마다 빈 세션이 누적되는 것을 막는다.
+function shutdown(): void {
     if (tickTimer) {
         clearInterval(tickTimer);
+        tickTimer = undefined;
     }
     if (flushTimer) {
         clearInterval(flushTimer);
+        flushTimer = undefined;
     }
     flush();
+
+    const data = readDayFile(currentDate);
+    if (!data) {
+        return;
+    }
+    const myIdx = findMySessionIndex(data);
+    if (myIdx >= 0 && data.sessions[myIdx].active_seconds === 0) {
+        data.sessions.splice(myIdx, 1);
+        data.active_seconds = sumSessions(data);
+        data.last_updated = localISOString(new Date());
+        writeDayFile(data);
+    }
+}
+
+export function deactivate(): void {
+    shutdown();
 }
