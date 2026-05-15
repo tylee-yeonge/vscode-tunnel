@@ -1,5 +1,27 @@
 # Changelog
 
+## v1.8.2 (2026-05-15)
+
+### Added
+- 안전 재기동 스크립트 `reload.sh` 추가
+  - `start.sh`와 동일한 compose 오버레이 누적 로직(`docker-compose.gpu.yml`,
+    `docker-compose.local.yml`, `docker-compose.tailscale.yml`)을 거쳐
+    동일한 `COMPOSE_ARGS`로 `docker compose down` 후 `up -d --build` 수행
+  - 일부 compose 파일만 빠진 명령으로 재기동되어 사이드카가 옛 docker
+    network ID를 그대로 참조한 채 좀비가 되는 사고를 차단
+    (`study-timer-http`에서 `failed to set up container networking:
+    network ... not found`로 exit 128 케이스)
+  - `start.sh`와의 차별점은 `down` 유무. `start.sh`는 in-place 갱신이라 변경된
+    컨테이너만 recreate되어 빠르지만 좀비 정합성은 자동 정리되지 않는 반면,
+    `reload.sh`는 전체를 갈아엎어 정합성 회복까지 보장. 양쪽 모두 이미지 재빌드는
+    수행하며(`--build`), named volume에 저장된 데이터는 보존됨
+  - Study Timer는 SIGTERM grace period 동안 `deactivate`로 자기 세션의 최종
+    flush가 보장됨
+
+### Changed
+- `README.md`의 "컨테이너 중지 / 재시작" 섹션에 `reload.sh` 안내 추가 및
+  `start.sh`/`reload.sh`의 동작 차이(in-place vs down/up)를 명시
+
 ## v1.8.1 (2026-05-14)
 
 ### Added

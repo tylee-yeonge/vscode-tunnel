@@ -163,9 +163,19 @@ docker compose down
 # 중지
 docker compose down
 
-# 재시작 (재빌드 없이)
+# 재시작 (in-place, 이미지 재빌드 포함, 변경된 컨테이너만 recreate)
 ./start.sh
+
+# 안전 재기동 (down 후 up, 이미지 재빌드 포함, 좀비 네트워크/사이드카까지 정리)
+./reload.sh
 ```
+
+두 스크립트의 차이는 `docker compose down`을 먼저 거치는지 여부입니다. `start.sh`는
+in-place 갱신이라 변경된 컨테이너만 recreate되어 빠르지만, 옛 docker network ID를
+들고 있는 좀비 사이드카 같은 정합성 문제는 자동 정리되지 않습니다. `reload.sh`는
+같은 `COMPOSE_ARGS`(모든 compose 오버레이)로 `down` 후 `up -d --build`를 실행하여
+전체 컨테이너/네트워크를 깨끗하게 갈아엎으므로 정합성까지 회복합니다. named volume에
+저장된 데이터는 양쪽 모두 보존됩니다.
 
 ---
 
