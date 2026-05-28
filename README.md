@@ -212,7 +212,8 @@ vscode-tunnel   Up 8 seconds (healthy)
 - 이 경로가 최상위 폴더인 VS Code 창에서만 활성화됩니다.
 
 ### 측정 규칙
-- **Active 조건**: 창 focus 상태 + 최근 5분 이내 활동(편집 / 커서 이동 / 에디터 전환 / focus 복귀)
+- **Active 조건**: 창 focus 상태 + 최근 idle 임계 내 활동(편집 / 커서 이동 / 에디터 전환 / focus 복귀)
+- **idle 임계**: 활성 탭이 markdown preview(미리 보기) 이면 20분, 그 외 모든 탭(텍스트 에디터 / 노트북 / 기타 webview) 은 5분 (v1.10.1+). 미리 보기는 webview 내부 활동 신호가 API 로 노출되지 않아 동일 임계 적용이 부당하다는 점을 보정 — 자리 비움 시 최대 20분까지 시간이 부풀려질 수 있음
 - 1초 단위로 `active_seconds` 누적, 30초 주기로 파일에 atomic write
 - idle로는 세션이 끊기지 않고 카운트만 중단되므로, PC를 옮기거나 자리를 비워도 자연스럽게 측정 중단됩니다.
 - 자정을 넘기면 세션을 두 파일로 분할 기록합니다.
@@ -224,7 +225,7 @@ vscode-tunnel   Up 8 seconds (healthy)
   - `Studies/Phase N/weekM/...` 하위 파일 -> `"Phase N/weekM"`
   - `Studies/Hardware-Arm/stageN/...` 하위 파일 -> `"Hardware-Arm/stageN"`
   - 그 외(Roadmap, README, Hardware-Arm 최상위 문서, 활성 에디터 없음 등) -> `"other"`
-- 활성 탭이 markdown preview(미리 보기) 인 경우에도 원본 `.md` 파일의 카테고리로 귀속됩니다 (v1.10.0+). 가장 최근에 활성화되었던 `.md` 경로를 추적해 미리 보기 탭 라벨의 파일명과 basename 으로 검증한 뒤 매칭합니다. 단, webview 내부 스크롤/클릭은 VSCode API 로 노출되지 않으므로 미리 보기에서만 5분간 머무르면 일반 텍스트 파일을 키 입력 없이 읽을 때와 동일하게 idle 로 진입합니다.
+- 활성 탭이 markdown preview(미리 보기) 인 경우에도 원본 `.md` 파일의 카테고리로 귀속됩니다 (v1.10.0+). 가장 최근에 활성화되었던 `.md` 경로를 추적해 미리 보기 탭 라벨의 파일명과 basename 으로 검증한 뒤 매칭합니다. 미리 보기 탭의 idle 임계는 20분으로 확장되어 (v1.10.1+) 장문 markdown 읽기 세션이 5분 임계로 끊기지 않도록 합니다.
 - 불변식: `active_seconds == sum(by_phase_week.values())`
 - nanobot/MCP 쪽에서는 `other`를 집계에서 제외하고 `Phase N/weekM` / `Hardware-Arm/stageN` 키만 사용하는 것을 권장합니다.
 

@@ -12,6 +12,13 @@ const DATA_DIR = "/root/.study-timer";
 // idle 판정 임계값: 마지막 활동 이후 5분 지나면 카운트 중단
 const IDLE_THRESHOLD_MS = 5 * 60 * 1000;
 
+// 미리 보기(webview) 탭이 활성일 때 적용하는 더 큰 임계값.
+// webview 내부의 스크롤/클릭/키 입력은 VSCode API로 노출되지 않아 활동 신호를
+// 받을 방법이 없으므로, 텍스트 에디터와 동일한 5분을 그대로 적용하면 정상적인
+// 장문 markdown 읽기 세션이 부당하게 끊긴다. 트레이드오프로 자리 비움 시
+// 최대 20분까지 시간이 부풀려질 수 있음을 수용한다.
+const PREVIEW_IDLE_THRESHOLD_MS = 20 * 60 * 1000;
+
 // 1초 tick으로 active 시간을 누적
 const TICK_INTERVAL_MS = 1000;
 
@@ -311,8 +318,13 @@ function tick(): void {
         initSessionForDate(todayStr, startOfLocalDay(todayStr));
     }
 
-    // focus 상태이고 최근 5분 이내 활동이 있었으면 active
-    const idle = now.getTime() - lastActivity >= IDLE_THRESHOLD_MS;
+    // 활성 탭이 미리 보기면 더 큰 idle 임계 적용 (webview 활동 신호 부재 보정)
+    const activeTab = vscode.window.tabGroups.activeTabGroup?.activeTab;
+    const previewActive = activeTab !== undefined && isMarkdownPreviewTab(activeTab);
+    const threshold = previewActive ? PREVIEW_IDLE_THRESHOLD_MS : IDLE_THRESHOLD_MS;
+
+    // focus 상태이고 최근 활동이 임계 내였으면 active
+    const idle = now.getTime() - lastActivity >= threshold;
     if (focused && !idle) {
         sessionActiveSeconds++;
         // 현재 활성 에디터의 카테고리에도 1초 가산 (sessionActiveSeconds와 짝지어 불변식 유지)

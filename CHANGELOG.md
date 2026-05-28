@@ -1,5 +1,38 @@
 # Changelog
 
+## v1.10.1 (2026-05-28)
+
+### Changed
+- study-timer extension 의 idle 임계값을 활성 탭 종류에 따라 분기 적용
+  - markdown preview(webview) 탭이 활성일 때: **20분**
+  - 그 외 모든 탭(텍스트 에디터 / 노트북 / 기타 webview): **5분** (기존과 동일)
+- v1.10.0 에서 미리 보기 시간을 원본 `.md` 카테고리로 귀속시키도록 개선했으나,
+  webview 내부 스크롤/클릭이 API 로 노출되지 않아 5분 idle 임계가 그대로
+  적용되면서 정상적인 장문 markdown 읽기 세션이 부당하게 끊기는 문제가 있었음
+- 텍스트 에디터는 키 입력 / 셀렉션 변경 / 커서 이동 등 다양한 활동 신호가
+  잡히므로 5분 임계가 합리적이지만, 미리 보기는 활동 신호 부재로 인해 동일
+  임계를 적용하는 게 부당. 트레이드오프로 자리 비움 시 최대 20분까지 시간이
+  부풀려질 수 있음을 수용
+
+### Modified
+- `extensions/study-timer/src/extension.ts`
+  - `PREVIEW_IDLE_THRESHOLD_MS = 20 * 60 * 1000` 상수 신설
+  - `tick()` 에서 활성 탭이 미리 보기면 `PREVIEW_IDLE_THRESHOLD_MS`, 아니면
+    `IDLE_THRESHOLD_MS` 를 동적으로 선택해 idle 판정에 사용
+
+### Notes
+- 임계 분기는 매 tick 마다 활성 탭을 확인해 적용되므로, 미리 보기에서 코드
+  파일로 전환하는 순간 즉시 5분 임계로 바뀐다 (그 반대도 동일)
+- 미리 보기에서 어떤 활동(탭 클릭, 다른 파일 클릭 후 복귀, alt-tab 후 복귀 등)
+  이 일어나면 `lastActivity` 가 갱신되어 20분 카운트가 0부터 다시 시작됨
+- 데이터 형식 / JSON 스키마 변경 없음
+
+### Migration
+- 기존 사용자: 컨테이너 이미지 재빌드 + 재기동 필요
+  ```bash
+  ./reload.sh
+  ```
+
 ## v1.10.0 (2026-05-28)
 
 ### Added
