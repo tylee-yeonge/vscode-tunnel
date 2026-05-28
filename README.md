@@ -229,6 +229,16 @@ vscode-tunnel   Up 8 seconds (healthy)
 - 불변식: `active_seconds == sum(by_phase_week.values())`
 - nanobot/MCP 쪽에서는 `other`를 집계에서 제외하고 `Phase N/weekM` / `Hardware-Arm/stageN` 키만 사용하는 것을 권장합니다.
 
+### "other" 카테고리 상세 (`other_breakdown`, v1.11.0+)
+- `by_phase_week.other` 가 단일 합산값이라 "그 시간에 뭘 봤는지" 추적이 불가능했던 한계를 보완합니다.
+- 키 포맷
+  - 워크스페이스 내부 파일: workspace-relative POSIX 경로 (예: `Studies/Roadmap.md`)
+  - 워크스페이스 외부 파일: absolute path 그대로
+  - 활성 에디터 없음: `(no active editor)` sentinel
+  - 구버전 마이그레이션: `(legacy unattributed)` sentinel (실제 내역 복구 불가)
+- 불변식: `sum(other_breakdown.values()) == by_phase_week.other`. 매 `other` tick 에서 `by_phase_week.other` 와 `other_breakdown` 키가 같은 if 블록 안에서 함께 +1
+- 사용 예: nanobot MCP 측 신규 도구 `get-study-other-breakdown` 으로 명시적 요청 시에만 노출. 기존 도구 (`get-today` / `get-date` / `get-study-phase-week` 등) 의 응답 형식은 변경 없음
+
 ### 저장 경로 / 포맷
 - 경로: `/root/.study-timer/YYYY-MM-DD.json` (docker named volume `study-timer-data`)
 - 컨테이너 timezone(`Asia/Seoul`, Dockerfile에서 고정)을 사용하므로 모든 타임스탬프와 날짜 경계는 로컬 TZ 기준입니다.
@@ -243,6 +253,11 @@ vscode-tunnel   Up 8 seconds (healthy)
     "Phase 2/week1": 1000,
     "Hardware-Arm/stage1": 1000,
     "other": 400
+  },
+  "other_breakdown": {
+    "Studies/Roadmap.md": 250,
+    "README.md": 100,
+    "(no active editor)": 50
   },
   "sessions": [
     {

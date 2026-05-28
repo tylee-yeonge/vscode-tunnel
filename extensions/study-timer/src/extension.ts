@@ -46,6 +46,10 @@ interface DayFile {
     // 카테고리별(Phase N/weekM, Hardware-Arm/stageN, 또는 other) 누적 초. nanobot에서 소비.
     // v1.5.0 이전 파일에는 없을 수 있으므로 optional로 선언하고 로드 시 마이그레이션.
     by_phase_week?: Record<string, number>;
+    // "other" 로 귀속된 tick 의 키별(워크스페이스 상대 경로 또는 sentinel) 누적 초. v1.11.0+.
+    // 불변식: sum(other_breakdown.values()) == by_phase_week.other
+    // v1.10.x 이하 파일에는 없으므로 optional. 로드 시 ensureOtherBreakdown 으로 마이그레이션.
+    other_breakdown?: Record<string, number>;
     sessions: Session[];
     last_updated: string;
 }
@@ -61,6 +65,10 @@ let sessionActiveSeconds = 0;
 // flush 시 lastFlushed와의 delta만 파일의 by_phase_week에 가산하여 다중 인스턴스 합산을 보존.
 let myCategoryCounts: Record<string, number> = {};
 let myCategoryCountsAtLastFlush: Record<string, number> = {};
+// "other" 로 귀속된 tick 의 키별 카운트. myCategoryCounts.other 와 합이 항상 일치.
+// 같은 delta-flush 패턴으로 by_phase_week.other 와 other_breakdown 양쪽을 동일 flush 에서 갱신.
+let myOtherBreakdown: Record<string, number> = {};
+let myOtherBreakdownAtLastFlush: Record<string, number> = {};
 // 가장 최근에 활성화되었던 .md 텍스트 에디터의 경로.
 // VSCode 기본 markdown preview는 활성 .md를 따라가는 dynamic 동작이라
 // "최근 활성 .md == 현재 preview가 보여주는 파일"이 거의 항상 성립한다.
@@ -233,6 +241,29 @@ function ensureByPhaseWeek(data: DayFile): void {
     data.by_phase_week = data.active_seconds > 0 ? { other: data.active_seconds } : {};
 }
 
+// 구버전(v1.10.x 이하) other_breakdown 누락 파일을 in-place 마이그레이션.
+// 과거 데이터의 실제 내역은 복구 불가하므로 (legacy unattributed) sentinel 로 묶어 불변식 유지.
+// 불변식: sum(other_breakdown.values()) == by_phase_week.other
+function ensureOtherBreakdown(data: DayFile): void {
+    if (data.other_breakdown && typeof data.other_breakdown === "object") {
+        return;
+    }
+    const otherSec = data.by_phase_week?.other ?? 0;
+    data.other_breakdown = otherSec > 0 ? { "(legacy unattributed)": otherSec } : {};
+}
+
+// fsPath -> other_breakdown 키. extractCategory 가 "other" 반환 시에만 호출.
+// 워크스페이스 내부면 상대 경로, 외부면 absolute 그대로, undefined 면 sentinel.
+function otherBreakdownKey(fsPath: string | undefined): string {
+    if (!fsPath) {
+        return "(no active editor)";
+    }
+    if (fsPath.startsWith(TARGET_WORKSPACE + "/")) {
+        return path.relative(TARGET_WORKSPACE, fsPath);
+    }
+    return fsPath;
+}
+
 // 자기 인스턴스 세션을 새로 추가하고 currentSessionIndex를 기록
 // 다중 인스턴스 충돌을 막기 위해 activate/자정 분할 모두 항상 새 세션을 만든다.
 // (구버전의 RESUME 로직은 두 인스턴스가 같은 세션을 공유하여 active_seconds가
@@ -242,6 +273,8 @@ function initSessionForDate(dateStr: string, sessStart: Date): void {
     sessionActiveSeconds = 0;
     myCategoryCounts = {};
     myCategoryCountsAtLastFlush = {};
+    myOtherBreakdown = {};
+    myOtherBreakdownAtLastFlush = {};
 
     const loaded = readDayFile(dateStr);
     const data: DayFile = loaded || {
@@ -249,11 +282,13 @@ function initSessionForDate(dateStr: string, sessStart: Date): void {
         workspace: WORKSPACE_NAME,
         active_seconds: 0,
         by_phase_week: {},
+        other_breakdown: {},
         sessions: [],
         last_updated: localISOString(new Date()),
     };
 
     ensureByPhaseWeek(data);
+    ensureOtherBreakdown(data);
 
     // 자기 인스턴스의 새 세션 추가
     data.sessions.push({
@@ -272,13 +307,14 @@ function findMySessionIndex(data: DayFile): number {
     return data.sessions.findIndex((s) => s.instance_id === INSTANCE_ID);
 }
 
-// 자기 세션의 end/active_seconds 및 by_phase_week delta를 파일에 반영
+// 자기 세션의 end/active_seconds 및 by_phase_week / other_breakdown delta를 파일에 반영
 function flush(endDate?: Date): void {
     const data = readDayFile(currentDate);
     if (!data) {
         return;
     }
     ensureByPhaseWeek(data);
+    ensureOtherBreakdown(data);
 
     const myIdx = findMySessionIndex(data);
     if (myIdx < 0) {
@@ -301,6 +337,17 @@ function flush(endDate?: Date): void {
         }
     }
     myCategoryCountsAtLastFlush = { ...myCategoryCounts };
+
+    // other_breakdown: 같은 delta 패턴. by_phase_week.other 가산과 같은 flush 호출에서 처리하여 불변식 유지.
+    const ob = data.other_breakdown!;
+    for (const [k, v] of Object.entries(myOtherBreakdown)) {
+        const prev = myOtherBreakdownAtLastFlush[k] ?? 0;
+        const delta = v - prev;
+        if (delta > 0) {
+            ob[k] = (ob[k] ?? 0) + delta;
+        }
+    }
+    myOtherBreakdownAtLastFlush = { ...myOtherBreakdown };
 
     data.active_seconds = sumSessions(data);
     data.last_updated = localISOString(new Date());
@@ -328,8 +375,15 @@ function tick(): void {
     if (focused && !idle) {
         sessionActiveSeconds++;
         // 현재 활성 에디터의 카테고리에도 1초 가산 (sessionActiveSeconds와 짝지어 불변식 유지)
-        const category = extractCategory(getActiveFsPath());
+        const fsPath = getActiveFsPath();
+        const category = extractCategory(fsPath);
         myCategoryCounts[category] = (myCategoryCounts[category] ?? 0) + 1;
+        // other 분기: by_phase_week.other 와 짝지어 other_breakdown 의 키별 카운트도 함께 증가.
+        // 같은 if 블록 안에서 두 카운터를 동시에 +1 하여 불변식 sum(other_breakdown) == by_phase_week.other 유지.
+        if (category === "other") {
+            const key = otherBreakdownKey(fsPath);
+            myOtherBreakdown[key] = (myOtherBreakdown[key] ?? 0) + 1;
+        }
     }
 }
 

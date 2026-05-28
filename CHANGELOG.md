@@ -1,5 +1,55 @@
 # Changelog
 
+## v1.11.0 (2026-05-28)
+
+### Added
+- study-timer 일별 JSON 파일에 `other_breakdown: Record<string, number>` 필드 추가
+  - 기존 `by_phase_week.other` 는 "Phase / Hardware-Arm 외 모든 활동" 의 단일 합산값이라
+    Roadmap / README / 워크스페이스 외부 파일 / 활성 에디터 없음 등 이질적 활동이
+    모두 한 통에 묶여있어 사후 추적 불가했던 문제 해소
+  - 키 포맷: workspace-relative POSIX 경로 (예: `Studies/Roadmap.md`).
+    워크스페이스 외부 파일은 absolute path, 활성 에디터 없음 시점은
+    `(no active editor)` sentinel 로 귀속
+  - 불변식: `sum(other_breakdown.values()) == by_phase_week.other`. 매 tick 의
+    `other` 분기에서 `by_phase_week.other` 와 `other_breakdown` 키를 같은
+    if 블록 안에서 함께 +1 하여 유지
+- 마이그레이션 헬퍼 `ensureOtherBreakdown()` 추가
+  - 구버전(v1.10.x 이하) 파일 로드 시 `{"(legacy unattributed)": <legacy_other_sec>}`
+    형태로 초기화하여 불변식 유지. 과거 데이터의 실제 내역은 복구 불가능
+  - `flush()` 와 `initSessionForDate()` 양쪽에서 호출되어 일관성 보장
+
+### Changed
+- `extensions/study-timer/src/extension.ts`
+  - `DayFile` 인터페이스에 `other_breakdown?: Record<string, number>` 필드 추가
+  - 런타임 상태 `myOtherBreakdown` / `myOtherBreakdownAtLastFlush` 신설
+    (기존 `myCategoryCounts` / `myCategoryCountsAtLastFlush` 와 동일한
+    delta-flush 패턴으로 다중 인스턴스 충돌 방지)
+  - `tick()` 의 active 분기에서 `category === "other"` 일 때 `otherBreakdownKey(fsPath)`
+    로 키 생성 후 `myOtherBreakdown` +1
+  - `flush()` 에서 `myOtherBreakdown` delta 를 `data.other_breakdown` 에 가산
+  - `initSessionForDate()` 에서 런타임 상태 리셋 + `ensureOtherBreakdown` 호출
+
+### Notes
+- 데이터 형식 backward-compatible. v1.10.x 시점에 작성된 일별 파일은 첫 flush
+  시점에 `other_breakdown` 필드가 추가되며 기존 `other` 시간은
+  `(legacy unattributed)` 로 귀속
+- 본 변경은 nanobot-docker 측 신규 MCP 도구 `get-study-other-breakdown` 과
+  한 쌍. nanobot-docker 작업은 별도 진행
+- 동시성 모델은 기존 `by_phase_week` 와 동일 (delta-flush + atomic write).
+  새로운 race / locking 메커니즘 도입 없음
+- 자세한 설계 / 결정 로그 / 검증 항목은 `other-breakdown-plan.md` 참조
+  (로컬 plan 파일, `.gitignore` 의 `*plan.md` 규칙으로 커밋 안 됨)
+
+### Migration
+- 기존 사용자: 컨테이너 이미지 재빌드 + 재기동 필요
+  ```bash
+  ./reload.sh
+  ```
+- v1.9.0 부터의 CLI auto-refresh 가 새 CLI 를 받으면 GitHub device-flow
+  재인증이 필요할 수 있음. `docker compose logs -f` 로 출력되는 URL/코드를
+  브라우저에 입력하면 인증 정보가 `vscode-cli-data` 볼륨에 저장되어 이후
+  유지됨
+
 ## v1.10.1 (2026-05-28)
 
 ### Changed
