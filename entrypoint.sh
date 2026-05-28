@@ -13,6 +13,34 @@ STARTUP_GRACE=300    # 초기 시작 후 헬스체크 면제 시간 (초, 인증
 retry_count=0
 start_time=0
 
+# VS Code tunnel CLI를 stable 채널의 최신 빌드로 갱신
+# 이미지에 burn-in된 CLI는 빌드 시점에 고정되므로 클라이언트(vscode.dev/Desktop)
+# 가 갱신되면서 컨테이너 CLI 와 protocol/호환성 격차가 누적될 수 있다.
+# 매 컨테이너 시작 시 최신 stable CLI 를 받아 /usr/local/bin/code 를 덮어쓴다.
+# - 다운로드 실패(네트워크/CDN 일시 장애) 시 이미지 burn-in 본 CLI 가 그대로 유지됨
+# - 갱신 직전 CLI 는 /usr/local/bin/code.prev 로 백업되어 수동 롤백 가능
+# - --max-time 30: 네트워크 hang 으로 컨테이너 시작이 무한 지연되는 것을 차단
+refresh_vscode_cli() {
+    ARCH=$(uname -m | sed "s/aarch64/arm64/; s/x86_64/x64/")
+    # 현재 CLI 를 .prev 로 백업 (롤백용)
+    if [ -f /usr/local/bin/code ]; then
+        cp /usr/local/bin/code /usr/local/bin/code.prev
+    fi
+
+    if curl -fsSL --max-time 30 \
+        "https://code.visualstudio.com/sha/download?build=stable&os=cli-alpine-${ARCH}" \
+        -o /tmp/code-new.tar.gz; then
+        if tar -xzf /tmp/code-new.tar.gz -C /usr/local/bin && rm -f /tmp/code-new.tar.gz; then
+            NEW_VER=$(code --version 2>/dev/null | head -1)
+            echo "[entrypoint] vscode CLI refreshed: ${NEW_VER}"
+        else
+            echo "[entrypoint] vscode CLI archive extract failed, keeping previous"
+        fi
+    else
+        echo "[entrypoint] vscode CLI download failed (network/timeout), keeping previous"
+    fi
+}
+
 # 호스트의 ~/.ssh를 /root/.ssh-host로 마운트하고 컨테이너 root 소유로 복사
 # Linux 호스트에서 bind mount된 파일의 UID/perms가 그대로 노출되어
 # SSH가 "Bad owner or permissions" 에러로 거부하는 문제를 회피하기 위함
@@ -194,6 +222,9 @@ cleanup() {
     exit 0
 }
 trap cleanup TERM INT
+
+# VS Code tunnel CLI 갱신 (tunnel 시작 전, 실패 시 burn-in 본 사용)
+refresh_vscode_cli
 
 # SSH 키 권한 보정 (tunnel 시작 전)
 setup_ssh

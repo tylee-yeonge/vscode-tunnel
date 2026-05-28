@@ -11,7 +11,7 @@ Mac(Apple Silicon)과 Ubuntu(x86_64) 모두 별도 수정 없이 동작합니다
 |-----------|------------|
 | Base Image | Ubuntu 24.04 (기본값, `.env`의 `BASE_IMAGE`로 CUDA 이미지 등으로 오버라이드 가능) |
 | OpenCV | 4.10.0 (소스 빌드, contrib 포함) |
-| VS Code CLI | stable / 빌드 시 호스트 아키텍처 자동 감지 (arm64, x64) |
+| VS Code CLI | stable / 빌드 시 호스트 아키텍처 자동 감지 (arm64, x64) / 매 컨테이너 시작 시 최신 stable 로 자동 갱신 (v1.9.0+) |
 | Claude Code | 최신 버전 (native installer) |
 | 빌드 도구 | CMake, Ninja, GDB, build-essential |
 
@@ -177,6 +177,30 @@ in-place 갱신이라 변경된 컨테이너만 recreate되어 빠르지만, 옛
 전체 컨테이너/네트워크를 깨끗하게 갈아엎으므로 정합성까지 회복합니다. named volume에
 저장된 데이터는 양쪽 모두 보존됩니다.
 
+`reload.sh`는 v1.9.0 부터 마지막 단계에서 entrypoint 로그를 자동으로 추려 출력합니다.
+`Dockerfile` / `entrypoint.sh` / `extensions/` 등 이미지에 burn-in 되는 자산을 수정한
+뒤에도 `./reload.sh` 한 번으로 down -> build -> up -> 검증까지 끝납니다.
+
+```
+Verifying entrypoint output...
+[entrypoint] vscode CLI refreshed: code 1.122.0 (commit 6a49527...)
+[entrypoint] SSH 키 복사 및 권한 보정 완료
+[entrypoint] study-timer extension 배치 및 등록 완료
+
+Container status:
+NAMES           STATUS
+vscode-tunnel   Up 8 seconds (healthy)
+```
+
+**언제 어느 쪽을 쓰나:**
+
+| 변경 유형 | 권장 스크립트 |
+|---|---|
+| `.env` 만 변경 (TUNNEL_NAME 등) | `docker compose down && ./start.sh` |
+| `docker-compose*.yml` 만 변경 | `./start.sh` (in-place recreate) |
+| `Dockerfile` / `entrypoint.sh` / extension 소스 변경 | **`./reload.sh`** (down + build + 검증) |
+| 좀비 사이드카 / 네트워크 정합성 복구 | **`./reload.sh`** |
+
 ---
 
 ## Study Timer
@@ -281,6 +305,38 @@ vscode-tunnel 컨테이너를 먼저 기동해 볼륨이 생성된 이후에 nan
 
 ---
 
+## VS Code CLI 자동 갱신
+
+이미지에 burn-in 된 `code` 바이너리는 빌드 시점에 고정되어 시간이 지날수록 클라이언트
+(vscode.dev / VS Code Desktop) 와 격차가 누적될 수 있습니다. v1.9.0 부터 `entrypoint.sh`
+의 `refresh_vscode_cli()` 가 매 컨테이너 시작 시 stable 채널의 최신 CLI 를 받아
+`/usr/local/bin/code` 를 덮어씁니다.
+
+| 항목 | 동작 |
+|---|---|
+| 갱신 시점 | 컨테이너 시작 시 (tunnel 기동 직전) |
+| 다운로드 URL | `https://code.visualstudio.com/sha/download?build=stable&os=cli-alpine-${ARCH}` |
+| 타임아웃 | `curl --max-time 30` (네트워크 hang 차단) |
+| 백업 | 직전 CLI 를 `/usr/local/bin/code.prev` 로 보존 |
+| 실패 fallback | 다운로드/추출 실패 시 이미지 burn-in 본 CLI 를 그대로 사용 |
+
+**호환성**: VS Code tunnel 은 클라이언트가 요청한 commit hash 의 server 를 CLI 가
+다운로드/실행하는 구조이므로 **CLI 가 클라이언트보다 같거나 더 최신** 이면 일반적으로
+호환됩니다. 옛 클라이언트로 접속해도 해당 commit 의 server 가 별도로 받아져
+`/root/.vscode/cli/servers/Stable-<hash>/` 에 누적되므로 문제 없습니다.
+
+**문제 발생 시 롤백**:
+
+```bash
+docker exec vscode-tunnel mv /usr/local/bin/code.prev /usr/local/bin/code
+docker exec vscode-tunnel code tunnel restart
+```
+
+최후 수단으로 `docker compose up -d --force-recreate` 시 entrypoint 가 다시 최신
+다운로드를 시도하며, 그것도 실패하면 이미지 burn-in CLI 로 fallback.
+
+---
+
 ## 파일 구성
 
 ```
@@ -291,8 +347,9 @@ vscode-tunnel 컨테이너를 먼저 기동해 볼륨이 생성된 이후에 nan
 ├── docker-compose.tailscale.yml  # study-timer-http 사이드카 (TAILSCALE_IP 시 자동 적용)
 ├── docker-compose.local.yml      # 머신별 마운트 등 로컬 오버라이드 (gitignored)
 ├── study-timer-nginx.conf        # 사이드카 nginx 설정 (autoindex JSON, no-cache)
-├── start.sh                      # GPU/local/tailscale 자동 감지 시작 스크립트
-├── entrypoint.sh                 # 터널 watchdog + Study Timer extension 배치 스크립트
+├── start.sh                      # GPU/local/tailscale 자동 감지 시작 스크립트 (in-place recreate)
+├── reload.sh                     # 안전 재기동: down -> build -> up -> entrypoint 검증 출력
+├── entrypoint.sh                 # 터널 watchdog + VS Code CLI 자동 갱신 + Study Timer extension 배치
 ├── extensions/
 │   └── study-timer/              # 실사용 시간 측정 VS Code extension (TypeScript)
 ├── UBUNTU_SETUP.md               # Ubuntu 학습 호스트 독립 배포 가이드

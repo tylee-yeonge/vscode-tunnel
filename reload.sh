@@ -38,3 +38,16 @@ docker compose $COMPOSE_ARGS down
 
 echo "Starting containers..."
 docker compose $COMPOSE_ARGS up -d --build
+
+# entrypoint 가 vscode CLI 갱신 / SSH 권한 보정 / study-timer 배치 라인을
+# 출력할 때까지 짧게 대기한 뒤, 핵심 검증 로그만 추려서 보여준다.
+# tunnel 인증 단계는 첫 실행 때 별도로 docker compose logs -f 로 확인.
+echo ""
+echo "Verifying entrypoint output..."
+sleep 8
+docker compose $COMPOSE_ARGS logs vscode-tunnel 2>&1 \
+    | grep -E "vscode CLI|study-timer|SSH" || true
+
+echo ""
+echo "Container status:"
+docker ps --filter name=vscode-tunnel --format 'table {{.Names}}\t{{.Status}}'

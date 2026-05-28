@@ -1,5 +1,68 @@
 # Changelog
 
+## v1.9.0 (2026-05-28)
+
+### Added
+- 컨테이너 시작 시 VS Code tunnel CLI(`code`) 자동 갱신 — 클라이언트
+  (vscode.dev / VS Code Desktop) 와 컨테이너 CLI 간 버전 격차가 누적되어
+  접속이 깨지는 상황을 사전에 예방
+  - `entrypoint.sh`에 `refresh_vscode_cli()` 함수 신설. tunnel 기동 직전
+    `https://code.visualstudio.com/sha/download?build=stable&os=cli-alpine-${ARCH}`
+    에서 최신 stable CLI 를 받아 `/usr/local/bin/code` 를 덮어씀
+  - 갱신 직전 CLI 는 `/usr/local/bin/code.prev` 로 백업 (수동 롤백 경로 확보)
+  - `curl --max-time 30` 으로 네트워크 hang 시에도 컨테이너 시작이 지연되지 않음
+  - 다운로드/추출 실패 시 이미지 burn-in 본 CLI 를 그대로 유지 (fail-safe)
+
+### Changed
+- `entrypoint.sh`: `refresh_vscode_cli()` 함수 추가, 메인 흐름의
+  `setup_ssh` 직전에서 호출되도록 배치
+- `reload.sh` 보강 — v1.8.2 에서 도입된 안전 재기동 스크립트에 entrypoint
+  검증 로그 출력 단계 추가
+  - `up -d --build` 직후 8초 대기 후 컨테이너 로그에서
+    `vscode CLI` / `study-timer` / `SSH` 라인을 grep 하여 출력 — CLI 갱신
+    성공 여부, extension 배치 완료, SSH 권한 보정 완료를 한 화면에서 확인
+  - 마지막에 `docker ps` 로 컨테이너 상태(healthy 여부) 표시
+  - 이미지에 burn-in 되는 자산(Dockerfile / entrypoint.sh / extensions/) 수정
+    후에도 `reload.sh` 한 번으로 down -> build -> up -> 검증까지 모두 처리되어,
+    "재빌드 후 별도 명령으로 로그를 다시 확인" 하던 흐름이 단축됨
+- `README.md`: "포함 구성" 표의 VS Code CLI 항목에 "매 컨테이너 시작 시 최신
+  stable 로 자동 갱신" 표기 추가. "자동 복구 (Watchdog)" 다음에 "VS Code CLI
+  자동 갱신" 섹션 신설 — 동작/타임아웃/백업/fallback 표 + 롤백 절차 명시.
+  "컨테이너 중지 / 재시작" 섹션의 `reload.sh` 설명에 검증 출력 단계 + 변경
+  유형별 스크립트 선택 가이드(`start.sh` vs `reload.sh`) 추가
+
+### Notes
+- VS Code tunnel 의 클라이언트-서버 매칭 원리상 **CLI 가 클라이언트보다 같거나
+  더 최신** 이면 일반적으로 호환됨. 클라이언트가 요청한 commit hash 의 server
+  는 CLI 가 별도로 다운로드/실행하므로(`/root/.vscode/cli/servers/Stable-<hash>/`)
+  CLI 버전과 무관하게 클라이언트 ↔ server 는 항상 같은 commit 으로 매칭됨
+- 본 갱신은 "옛 CLI + 새 클라이언트" 조합에서 발생하는 protocol 격차를
+  방지하기 위한 것으로, "새 CLI + 옛 클라이언트" 방향에서는 사실상 항상 안전
+- VS Code CLI 자체에는 self-update 기능이 없으므로(`code update` 는
+  "No existing installation found" 으로 종료) entrypoint 레벨에서 매번
+  덮어쓰는 방식이 유일한 영속적 자동화 경로
+- 갱신이 실패해도 이미지에 burn-in 된 CLI(빌드 시점의 stable) 로 fallback 되어
+  컨테이너 자체는 항상 기동 가능
+- 별도 `rebuild.sh` 스크립트를 따로 두는 안도 검토했으나, v1.8.2 의 `reload.sh`
+  가 이미 동일한 compose 오버레이 감지 + `down` -> `up -d --build` 흐름을
+  갖고 있어 검증 출력만 통합하는 쪽으로 결정. 사용자는 항상 `reload.sh` 한
+  지점에서 재배포 + 검증을 수행
+
+### Migration
+- 기존 사용자: 컨테이너 이미지 재빌드 + 재기동 필요
+  ```bash
+  ./reload.sh
+  ```
+- `reload.sh` 출력 마지막 부분에 `[entrypoint] vscode CLI refreshed: <version>`
+  라인이 표시되면 정상. 실패 시
+  `[entrypoint] vscode CLI download failed ... keeping previous` 가 표시되며
+  이전 CLI 로 그대로 동작
+- 새 CLI 가 문제를 일으키면 즉시 롤백 가능:
+  ```bash
+  docker exec vscode-tunnel mv /usr/local/bin/code.prev /usr/local/bin/code
+  docker exec vscode-tunnel code tunnel restart
+  ```
+
 ## v1.8.2 (2026-05-15)
 
 ### Added
