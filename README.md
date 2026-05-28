@@ -224,6 +224,7 @@ vscode-tunnel   Up 8 seconds (healthy)
   - `Studies/Phase N/weekM/...` 하위 파일 -> `"Phase N/weekM"`
   - `Studies/Hardware-Arm/stageN/...` 하위 파일 -> `"Hardware-Arm/stageN"`
   - 그 외(Roadmap, README, Hardware-Arm 최상위 문서, 활성 에디터 없음 등) -> `"other"`
+- 활성 탭이 markdown preview(미리 보기) 인 경우에도 원본 `.md` 파일의 카테고리로 귀속됩니다 (v1.10.0+). 가장 최근에 활성화되었던 `.md` 경로를 추적해 미리 보기 탭 라벨의 파일명과 basename 으로 검증한 뒤 매칭합니다. 단, webview 내부 스크롤/클릭은 VSCode API 로 노출되지 않으므로 미리 보기에서만 5분간 머무르면 일반 텍스트 파일을 키 입력 없이 읽을 때와 동일하게 idle 로 진입합니다.
 - 불변식: `active_seconds == sum(by_phase_week.values())`
 - nanobot/MCP 쪽에서는 `other`를 집계에서 제외하고 `Phase N/weekM` / `Hardware-Arm/stageN` 키만 사용하는 것을 권장합니다.
 

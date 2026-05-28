@@ -1,5 +1,60 @@
 # Changelog
 
+## v1.10.0 (2026-05-28)
+
+### Added
+- study-timer extension 이 markdown preview(미리 보기) 탭을 활성 상태로 두고
+  있을 때에도 원본 `.md` 파일의 카테고리로 시간이 누적되도록 개선
+  - 기존: 미리 보기 탭(webview)이 활성이면 `activeTextEditor` 가 undefined 라
+    카테고리가 `other` 로 떨어졌음
+  - 변경: 가장 최근 활성화되었던 `.md` 파일 경로(`lastActiveMdFile`)를 추적하고
+    미리 보기 탭이 활성이면 그 경로의 카테고리로 귀속. VSCode 기본 markdown
+    preview 는 활성 `.md` 를 따라가는 dynamic 동작이라 "최근 활성 `.md` ==
+    현재 preview 가 보여주는 파일" 이 거의 항상 성립함을 활용
+- 미리 보기 탭 라벨에서 파일명을 추출해 `lastActiveMdFile` 의 basename 과
+  대조하는 검증 단계 추가 — basename 이 다르면 잘못된 매칭이 일어나지 않음
+  ("미리 보기 README.md" / "Preview README.md" 두 locale 모두 처리)
+- 탭 전환 이벤트(`vscode.window.tabGroups.onDidChangeTabs`)를 활동 신호로
+  추가 구독 — 텍스트 에디터에서 미리 보기 탭으로 전환하는 동작 자체가
+  `lastActivity` 를 갱신하므로 전환 직후 idle 로 빠지지 않음
+
+### Changed
+- `extensions/study-timer/src/extension.ts`
+  - `lastActiveMdFile: string | undefined` 런타임 상태 신설
+  - `isMarkdownPreviewTab()`, `extractPreviewFilename()`,
+    `getMarkdownPreviewSource()` 헬퍼 추가
+  - `getActiveFsPath()` 의 fallback 체인을 텍스트 에디터 -> 노트북 에디터 ->
+    markdown preview 의 원본 `.md` 로 확장
+  - `onDidChangeActiveTextEditor` 콜백에서 활성 에디터가 `.md` 면
+    `lastActiveMdFile` 갱신
+  - activate 시점에 이미 `.md` 가 활성 상태인 경우를 위해 한 번 초기화 호출
+- 매칭 우선순위
+  1. `lastActiveMdFile` 의 basename 이 미리 보기 라벨 파일명과 일치하면 그 경로
+  2. 열린 탭 중 같은 basename 의 `TabInputText` 가 유일하면 그 경로
+  3. 그 외(모호하거나 매칭 없음)는 `undefined` 로 귀속 -> `other`
+
+### Notes
+- VSCode 확장 API 는 webview 내부의 스크롤/클릭/키 입력을 노출하지 않으므로
+  미리 보기 탭에서만 5분 이상 머무르면 여전히 idle 로 진입한다. 이는 일반
+  텍스트 파일을 키 입력 없이 5분간 읽기만 할 때와 동일한 동작이며 본 변경의
+  적용 범위 밖
+- 핀(pin) 고정된 미리 보기 탭 + 같은 basename 의 다른 `.md` 가 동시에 열린
+  희귀한 케이스에서는 잘못된 카테고리로 귀속될 수 있다. 일반적인 dynamic
+  preview 사용 시에는 발생하지 않음
+- 노트북(`.ipynb`) 카테고리 추출(`activeNotebookEditor`) 은 변경 없이 그대로
+  유지됨
+
+### Migration
+- 기존 사용자: 컨테이너 이미지 재빌드 + 재기동 필요
+  ```bash
+  ./reload.sh
+  ```
+- study-timer extension 은 이미지에 burn-in 되어 배치되므로, 소스만 바꾸고
+  `docker compose restart` 하는 것으로는 반영되지 않음. 반드시 `--build` 가
+  포함된 `reload.sh` 또는 `start.sh` 흐름으로 재배포해야 한다
+- 데이터 형식(JSON 스키마, `by_phase_week` 키 규칙) 변경 없음. 기존 일별
+  파일은 그대로 유효
+
 ## v1.9.0 (2026-05-28)
 
 ### Added

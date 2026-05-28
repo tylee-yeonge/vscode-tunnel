@@ -54,6 +54,11 @@ let sessionActiveSeconds = 0;
 // flush 시 lastFlushed와의 delta만 파일의 by_phase_week에 가산하여 다중 인스턴스 합산을 보존.
 let myCategoryCounts: Record<string, number> = {};
 let myCategoryCountsAtLastFlush: Record<string, number> = {};
+// 가장 최근에 활성화되었던 .md 텍스트 에디터의 경로.
+// VSCode 기본 markdown preview는 활성 .md를 따라가는 dynamic 동작이라
+// "최근 활성 .md == 현재 preview가 보여주는 파일"이 거의 항상 성립한다.
+// preview 탭이 활성이라 activeTextEditor가 undefined일 때 카테고리 fallback으로 사용.
+let lastActiveMdFile: string | undefined;
 
 // 2자리 0-padding 헬퍼
 function pad(n: number): string {
@@ -95,8 +100,62 @@ function filePath(dateStr: string): string {
     return path.join(DATA_DIR, `${dateStr}.json`);
 }
 
-// 현재 활성 에디터 또는 노트북 에디터의 파일 경로를 반환
-// 텍스트 에디터가 우선, 없으면 노트북 에디터로 fallback
+// 탭이 markdown preview webview인지 판정
+function isMarkdownPreviewTab(tab: vscode.Tab): boolean {
+    const input = tab.input;
+    if (!(input instanceof vscode.TabInputWebview)) {
+        return false;
+    }
+    // viewType은 보통 "mainThreadWebview-markdown.preview" 형태.
+    // 확장이 바뀌어도 깨지지 않도록 substring으로 느슨하게 체크.
+    return input.viewType.toLowerCase().includes("markdown");
+}
+
+// 미리 보기 탭의 라벨에서 원본 파일명 추출.
+// "미리 보기 README.md" → "README.md", "Preview README.md" → "README.md"
+function extractPreviewFilename(tab: vscode.Tab): string {
+    return tab.label.replace(/^(미리 보기|Preview)\s+/, "");
+}
+
+// 현재 활성 탭이 markdown preview(webview)인 경우 원본 .md 파일 경로를 반환한다.
+// 매칭 우선순위:
+//   1) lastActiveMdFile의 basename이 미리 보기 탭 라벨의 파일명과 일치하면 그 경로
+//      (dynamic preview는 활성 .md를 따라가므로 이게 거의 항상 정답)
+//   2) 열린 탭 중 같은 basename의 TabInputText가 "유일"하면 그 경로
+//   3) 모호하거나 매칭 없음 → undefined ("other"로 귀속)
+function getMarkdownPreviewSource(): string | undefined {
+    const activeTab = vscode.window.tabGroups.activeTabGroup?.activeTab;
+    if (!activeTab || !isMarkdownPreviewTab(activeTab)) {
+        return undefined;
+    }
+
+    const filename = extractPreviewFilename(activeTab);
+
+    if (lastActiveMdFile && path.basename(lastActiveMdFile) === filename) {
+        return lastActiveMdFile;
+    }
+
+    let unique: string | undefined;
+    let ambiguous = false;
+    for (const group of vscode.window.tabGroups.all) {
+        for (const t of group.tabs) {
+            if (
+                t.input instanceof vscode.TabInputText &&
+                path.basename(t.input.uri.fsPath) === filename
+            ) {
+                if (unique) {
+                    ambiguous = true;
+                } else {
+                    unique = t.input.uri.fsPath;
+                }
+            }
+        }
+    }
+    return ambiguous ? undefined : unique;
+}
+
+// 현재 활성 에디터 또는 노트북 에디터의 파일 경로를 반환.
+// 우선순위: 텍스트 에디터 → 노트북 에디터 → markdown preview의 원본 .md
 function getActiveFsPath(): string | undefined {
     const te = vscode.window.activeTextEditor;
     if (te) {
@@ -106,7 +165,7 @@ function getActiveFsPath(): string | undefined {
     if (ne) {
         return ne.notebook.uri.fsPath;
     }
-    return undefined;
+    return getMarkdownPreviewSource();
 }
 
 // 파일 경로에서 카테고리 키 추출
@@ -288,10 +347,22 @@ export function activate(context: vscode.ExtensionContext): void {
     const bump = () => {
         lastActivity = Date.now();
     };
+    // 활성 텍스트 에디터가 .md면 lastActiveMdFile에 기억해두고 활동도 갱신.
+    // 이후 markdown preview 탭으로 전환되어 activeTextEditor가 undefined가 되어도
+    // 카테고리 추출에 사용할 수 있다.
+    const onActiveTextEditor = (editor: vscode.TextEditor | undefined) => {
+        bump();
+        if (editor && editor.document.uri.fsPath.toLowerCase().endsWith(".md")) {
+            lastActiveMdFile = editor.document.uri.fsPath;
+        }
+    };
     context.subscriptions.push(
         vscode.workspace.onDidChangeTextDocument(bump),
         vscode.window.onDidChangeTextEditorSelection(bump),
-        vscode.window.onDidChangeActiveTextEditor(bump),
+        vscode.window.onDidChangeActiveTextEditor(onActiveTextEditor),
+        // 탭 전환(미리 보기 탭으로 이동 포함) 시에도 활동으로 간주.
+        // webview 내부의 스크롤/클릭은 API로 노출되지 않아 idle 5분 임계는 그대로 적용됨.
+        vscode.window.tabGroups.onDidChangeTabs(bump),
         vscode.window.onDidChangeWindowState((state) => {
             focused = state.focused;
             // focus 복귀는 활동으로 간주
@@ -300,6 +371,9 @@ export function activate(context: vscode.ExtensionContext): void {
             }
         })
     );
+
+    // activate 시점에 이미 .md가 활성 에디터일 수도 있으므로 한 번 초기화
+    onActiveTextEditor(vscode.window.activeTextEditor);
 
     // 타이머 등록
     tickTimer = setInterval(tick, TICK_INTERVAL_MS);
