@@ -101,6 +101,11 @@ volumes:
 > 호스트/컨테이너 측 심볼릭 링크 dereference 차이로 의도와 다르게 동작하여
 > v1.7.6에서 제거했습니다.
 
+> `/dev/shm` 은 v1.11.1 부터 `shm_size: 8gb` 로 상향됐습니다 (Docker 기본 64MB).
+> PyTorch DataLoader 멀티워커 (`num_workers > 0`) 에서 공유 메모리 부족으로
+> `Bus error` 가 나는 문제를 회피하기 위함이며, 호스트 RAM 을 선점하지 않고
+> 사용량만큼만 점유합니다.
+
 ---
 
 ## GPU 지원

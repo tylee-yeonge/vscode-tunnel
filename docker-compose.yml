@@ -6,6 +6,9 @@ services:
         BASE_IMAGE: ${BASE_IMAGE:-ubuntu:24.04}
     container_name: vscode-tunnel
     restart: unless-stopped
+    # PyTorch DataLoader 멀티워커 등에서 /dev/shm 기본 64MB가 부족해 bus error 발생.
+    # 8GB로 상향.
+    shm_size: 8gb
     env_file:
       - .env
     environment:

@@ -1,5 +1,28 @@
 # Changelog
 
+## v1.11.1 (2026-05-29)
+
+### Changed
+- `docker-compose.yml` 의 `vscode-tunnel` 서비스에 `shm_size: 8gb` 추가
+  - Docker 기본 `/dev/shm` 크기는 64MB. PyTorch DataLoader 멀티워커 (`num_workers > 0`)
+    가 워커 간 텐서 공유에 `/dev/shm` 을 쓰는 구조라 학습 시 `Bus error` /
+    `RuntimeError: DataLoader worker (pid xxx) is killed by signal: Bus error`
+    가 자주 발생했음
+  - `shm_size` 는 **최대 한도**(tmpfs cap) 일 뿐 컨테이너 시작 시 호스트 RAM
+    8GB 를 선점하지 않음. 실제 점유는 사용량만큼만 발생
+
+### Notes
+- `shm_size` 는 컨테이너 생성 시점에만 읽히는 옵션이라 `docker compose restart`
+  로는 적용되지 않음. `down && up -d` 또는 `./reload.sh` 로 재생성 필요
+- 적용 확인: `docker exec vscode-tunnel df -h /dev/shm` → `Size 8.0G` 확인
+- 데이터 형식 / 스키마 변경 없음. 기존 study-timer 일별 파일과 무관
+
+### Migration
+- 기존 사용자: 컨테이너 재생성 필요
+  ```bash
+  ./reload.sh
+  ```
+
 ## v1.11.0 (2026-05-28)
 
 ### Added
