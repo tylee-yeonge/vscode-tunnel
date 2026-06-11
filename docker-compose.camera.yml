@@ -1,0 +1,12 @@
+services:
+  vscode-tunnel:
+    # ELP USB 스테레오 카메라(UVC) 패스스루.
+    # 스테레오 카메라는 좌/우 센서가 각각 video4linux 노드로 잡히므로
+    # /dev/video0, /dev/video1 두 노드를 명시적으로 컨테이너에 매핑한다.
+    # (호스트에서 v4l2-ctl --list-devices 로 실제 노드 번호 확인 후 맞출 것)
+    devices:
+      - /dev/video0:/dev/video0
+      - /dev/video1:/dev/video1
+    # 카메라 노드는 root:video 0660 소유라, 비-root 접근 대비 video 그룹 추가
+    group_add:
+      - video

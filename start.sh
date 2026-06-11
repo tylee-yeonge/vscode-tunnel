@@ -10,6 +10,12 @@ if command -v nvidia-smi > /dev/null 2>&1 && nvidia-smi > /dev/null 2>&1; then
     COMPOSE_ARGS="$COMPOSE_ARGS -f docker-compose.gpu.yml"
 fi
 
+# ELP USB 스테레오 카메라 자동 감지 (/dev/video0 존재 시)
+if [ -e /dev/video0 ]; then
+    echo "Camera detected: enabling ELP stereo camera passthrough"
+    COMPOSE_ARGS="$COMPOSE_ARGS -f docker-compose.camera.yml"
+fi
+
 # 머신별 로컬 오버라이드 (gitignored, 데이터셋 마운트 등)
 if [ -f docker-compose.local.yml ]; then
     echo "Local override detected: docker-compose.local.yml"

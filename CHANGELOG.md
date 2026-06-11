@@ -1,5 +1,37 @@
 # Changelog
 
+## v1.12.0 (2026-06-11)
+
+### Added
+- ELP USB 스테레오 카메라(UVC) 패스스루용 `docker-compose.camera.yml` 오버라이드 추가
+  - 스테레오 카메라는 좌/우 센서가 각각 video4linux 노드로 잡히므로 `/dev/video0`,
+    `/dev/video1` 두 노드를 `devices` 로 컨테이너에 명시 매핑
+  - 노드가 `root:video 0660` 소유라 비-root 접근 대비 `group_add: video` 동반
+  - 기존 `gpu` / `local` / `tailscale` 과 동일한 compose 오버레이 분기 패턴을 따름
+
+### Changed
+- `start.sh` / `reload.sh` 양쪽에 카메라 자동 감지 로직 추가
+  - `/dev/video0` 존재 시 `-f docker-compose.camera.yml` 을 누적 적용
+  - 두 스크립트는 동일한 `COMPOSE_ARGS` 누적 로직을 공유하므로 양쪽을 함께 갱신
+    (`reload.sh` 의 "새 오버레이가 늘면 양쪽 모두 갱신할 것" 주석 규약 준수)
+
+### Notes
+- `devices` 매핑은 컨테이너 생성 시점에만 읽히는 옵션이라 `docker compose restart`
+  로는 적용되지 않음. `down && up -d` 또는 `./reload.sh` 로 재생성 필요
+- 노드 번호는 호스트 하드웨어/연결 순서에 따라 다를 수 있음. 적용 전
+  `v4l2-ctl --list-devices` 로 실제 노드를 확인하고, `/dev/video0` /
+  `/dev/video1` 과 다르면 `docker-compose.camera.yml` 의 `devices` 항목을 맞출 것.
+  존재하지 않는 노드를 매핑하면 컨테이너 기동이 실패함
+- 적용 확인: `docker exec vscode-tunnel ls -l /dev/video*`
+- 카메라가 없는 호스트(Mac 등)에서는 `/dev/video0` 미존재로 오버레이가 적용되지
+  않아 기존 동작과 동일
+
+### Migration
+- 기존 사용자: 컨테이너 재생성 필요
+  ```bash
+  ./reload.sh
+  ```
+
 ## v1.11.1 (2026-05-29)
 
 ### Changed

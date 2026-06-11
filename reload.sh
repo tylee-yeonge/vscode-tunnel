@@ -23,6 +23,11 @@ if command -v nvidia-smi > /dev/null 2>&1 && nvidia-smi > /dev/null 2>&1; then
     COMPOSE_ARGS="$COMPOSE_ARGS -f docker-compose.gpu.yml"
 fi
 
+if [ -e /dev/video0 ]; then
+    echo "Camera detected: enabling ELP stereo camera passthrough"
+    COMPOSE_ARGS="$COMPOSE_ARGS -f docker-compose.camera.yml"
+fi
+
 if [ -f docker-compose.local.yml ]; then
     echo "Local override detected: docker-compose.local.yml"
     COMPOSE_ARGS="$COMPOSE_ARGS -f docker-compose.local.yml"
