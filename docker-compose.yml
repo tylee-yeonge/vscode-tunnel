@@ -4,6 +4,9 @@ services:
       context: .
       args:
         BASE_IMAGE: ${BASE_IMAGE:-ubuntu:24.04}
+        # ROS2 Jazzy 설치 여부. start.sh / reload.sh 가 Linux 호스트(우분투 PC)에서
+        # INSTALL_ROS=true 를 export 하며, Mac 에서는 미설정이라 false 로 스킵된다.
+        INSTALL_ROS: ${INSTALL_ROS:-false}
     container_name: vscode-tunnel
     restart: unless-stopped
     # PyTorch DataLoader 멀티워커 등에서 /dev/shm 기본 64MB가 부족해 bus error 발생.

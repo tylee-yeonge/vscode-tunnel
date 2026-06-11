@@ -4,6 +4,13 @@ set -e
 # 누적 args 방식: 기본 compose 파일에 환경 감지 결과를 -f로 얹는다
 COMPOSE_ARGS="-f docker-compose.yml"
 
+# ROS2 Jazzy 는 Linux 호스트(우분투 PC)에서만 이미지에 설치한다.
+# Mac(Darwin) 에서는 INSTALL_ROS 미설정 -> docker-compose.yml 의 기본값 false 로 스킵.
+if [ "$(uname -s)" = "Linux" ]; then
+    echo "Linux host detected: enabling ROS2 Jazzy install in image build"
+    export INSTALL_ROS=true
+fi
+
 # GPU 자동 감지 (호스트에서 nvidia-smi 동작 시)
 if command -v nvidia-smi > /dev/null 2>&1 && nvidia-smi > /dev/null 2>&1; then
     echo "GPU detected: enabling GPU support"

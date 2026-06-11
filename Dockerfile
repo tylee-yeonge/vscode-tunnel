@@ -137,6 +137,35 @@ RUN git config --system credential.helper store \
  && git config --system --add safe.directory '*'
 
 # ========================================
+# ROS2 Jazzy (Ubuntu 24.04 / noble 전용)
+# INSTALL_ROS=true 일 때만 설치. start.sh / reload.sh 가 Linux 호스트(우분투 PC)에서
+# 자동으로 true 를 export 하며, Mac(Darwin) 에서는 INSTALL_ROS 가 false 로 남아
+# 이 블록 전체가 스킵된다. desktop + cv-bridge + image-transport 설치.
+# 설치 시 interactive bash 가 자동으로 환경을 잡도록 /root/.bashrc 에 setup.bash 를 source.
+# ========================================
+ARG INSTALL_ROS=false
+RUN if [ "$INSTALL_ROS" = "true" ]; then \
+        set -eux; \
+        apt-get update; \
+        apt-get install -y --no-install-recommends software-properties-common; \
+        add-apt-repository -y universe; \
+        ROS_APT_SOURCE_VERSION=$(curl -fsSL https://api.github.com/repos/ros-infrastructure/ros-apt-source/releases/latest | jq -r .tag_name); \
+        UBUNTU_CODENAME=$(. /etc/os-release && echo "$VERSION_CODENAME"); \
+        curl -fsSL -o /tmp/ros2-apt-source.deb "https://github.com/ros-infrastructure/ros-apt-source/releases/download/${ROS_APT_SOURCE_VERSION}/ros2-apt-source_${ROS_APT_SOURCE_VERSION}.${UBUNTU_CODENAME}_all.deb"; \
+        apt-get install -y /tmp/ros2-apt-source.deb; \
+        rm -f /tmp/ros2-apt-source.deb; \
+        apt-get update; \
+        apt-get install -y \
+            ros-jazzy-desktop \
+            ros-jazzy-cv-bridge \
+            ros-jazzy-image-transport; \
+        echo 'source /opt/ros/jazzy/setup.bash' >> /root/.bashrc; \
+        rm -rf /var/lib/apt/lists/*; \
+    else \
+        echo "INSTALL_ROS=false: skipping ROS2 Jazzy installation"; \
+    fi
+
+# ========================================
 # 타임존 고정 (Asia/Seoul)
 # ubuntu:24.04 기본 /etc/localtime이 Etc/UTC를 가리키는 상태로 남아있어,
 # IANA tz 이름을 /etc/localtime 심볼릭 링크에서 추출하는 도구(예: code tunnel CLI의

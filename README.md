@@ -11,6 +11,7 @@ Mac(Apple Silicon)과 Ubuntu(x86_64) 모두 별도 수정 없이 동작합니다
 |-----------|------------|
 | Base Image | Ubuntu 24.04 (기본값, `.env`의 `BASE_IMAGE`로 CUDA 이미지 등으로 오버라이드 가능) |
 | OpenCV | 4.10.0 (소스 빌드, contrib 포함) |
+| ROS2 Jazzy | desktop + cv-bridge + image-transport / **Linux 호스트(우분투 PC)에서 빌드 시에만 설치** (v1.13.0+), Mac 미설치 |
 | VS Code CLI | stable / 빌드 시 호스트 아키텍처 자동 감지 (arm64, x64) / 매 컨테이너 시작 시 최신 stable 로 자동 갱신 (v1.9.0+) |
 | Claude Code | 최신 버전 (native installer) |
 | 빌드 도구 | CMake, Ninja, GDB, build-essential |
@@ -180,6 +181,56 @@ docker exec vscode-tunnel ls -l /dev/video*
 > 카메라가 없는 호스트(Mac 등)에서는 `/dev/video0` 미존재로 오버레이가 적용되지
 > 않아 기존 동작과 동일합니다. 컨테이너 안에서 OpenCV 등으로 영상을 다루는 데
 > 필요한 추가 패키지는 `Dockerfile` 영역이라 이 오버라이드 범위 밖입니다.
+
+---
+
+## ROS2 Jazzy (우분투 PC 전용)
+
+베이스 이미지가 Ubuntu 24.04 (noble)이므로, noble 공식 바이너리가 제공되는 **ROS2
+Jazzy**를 설치합니다. (Humble은 22.04 jammy 타깃이라 24.04 베이스에 부적합)
+
+설치 대상은 ROS2 데스크톱 풀셋 + 영상 처리에 필요한 두 패키지입니다.
+
+- `ros-jazzy-desktop`
+- `ros-jazzy-cv-bridge`
+- `ros-jazzy-image-transport`
+
+**Linux 호스트에서만 자동 설치**: ROS는 이미지 용량을 수 GB 늘리므로 Mac에는
+설치하지 않습니다. `start.sh` / `reload.sh`가 `uname -s`로 호스트 OS를 판별해,
+Linux(우분투 PC)일 때만 `INSTALL_ROS=true`를 export하여 빌드에 반영합니다.
+Mac(Darwin)에서는 미설정으로 남아 `docker-compose.yml`의 기본값 `false`로 스킵됩니다.
+
+```mermaid
+flowchart LR
+    A["start.sh / reload.sh"] --> B{"uname -s == Linux?"}
+    B -->|"우분투 PC"| C["INSTALL_ROS=true"]
+    B -->|"Mac (Darwin)"| D["미설정 (false)"]
+    C --> E["docker compose up --build"]
+    D --> E
+    E --> F{"Dockerfile: INSTALL_ROS?"}
+    F -->|"true"| G["ROS2 Jazzy 설치"]
+    F -->|"false"| H["스킵"]
+```
+
+별도 `.env` 설정 없이 호스트 OS만으로 자동 분기됩니다. 설치 시 `/root/.bashrc`에
+`source /opt/ros/jazzy/setup.bash`가 추가되어 VS Code 터미널(bash)에서 `ros2`
+명령이 바로 동작합니다.
+
+**적용 / 확인** (우분투 PC):
+
+```bash
+# 이미지 재빌드 (ROS desktop 은 용량이 커 최초 빌드 시간이 오래 걸림)
+./reload.sh
+
+# 설치 확인
+docker exec vscode-tunnel bash -lc 'source /opt/ros/jazzy/setup.bash && ros2 --version'
+```
+
+> **OpenCV 중복 주의**: 이 이미지는 OpenCV 4.10을 소스 빌드해 `/usr/local`에
+> 설치합니다. 반면 `ros-jazzy-cv-bridge`는 apt 의존성으로 noble 시스템
+> OpenCV(4.6)를 함께 끌어옵니다. cv-bridge(C++ 노드)는 apt OpenCV에, Python
+> `cv2`는 소스 빌드 4.10에 링크되는 이원 구조가 됩니다. 보통 공존 가능하나
+> 동일 프로세스에서 두 버전을 섞으면 충돌 소지가 있습니다.
 
 ---
 

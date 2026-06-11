@@ -1,5 +1,43 @@
 # Changelog
 
+## v1.13.0 (2026-06-11)
+
+### Added
+- ROS2 Jazzy 조건부 설치 추가 (Linux 호스트/우분투 PC 전용)
+  - `Dockerfile` 에 `ARG INSTALL_ROS=false` 와 조건부 설치 블록 추가.
+    `INSTALL_ROS=true` 일 때만 ROS2 apt 저장소(`ros-apt-source`)를 등록하고
+    `ros-jazzy-desktop`, `ros-jazzy-cv-bridge`, `ros-jazzy-image-transport` 설치
+  - 설치 시 interactive bash 가 자동으로 ROS 환경을 잡도록 `/root/.bashrc` 에
+    `source /opt/ros/jazzy/setup.bash` 추가
+  - 베이스가 Ubuntu 24.04 (noble) 이므로 noble 공식 바이너리가 있는 Jazzy 채택
+    (Humble 은 22.04 jammy 타깃이라 부적합)
+
+### Changed
+- `docker-compose.yml` 의 build args 에 `INSTALL_ROS: ${INSTALL_ROS:-false}` 추가
+- `start.sh` / `reload.sh` 양쪽에 Linux 호스트 감지 추가
+  - `uname -s` 가 `Linux` 이면 `INSTALL_ROS=true` 를 export 하여 빌드 시 ROS 설치
+  - Mac(Darwin) 에서는 미설정이라 `docker-compose.yml` 기본값 `false` 로 스킵
+  - 별도 `.env` 설정 없이 호스트 OS 만으로 자동 분기
+
+### Notes
+- ROS desktop 은 용량이 커(수 GB) 최초 빌드 시간이 크게 늘어남. 설치는 빌드 시점
+  네트워크(api.github.com / ROS apt 저장소) 접근 필요
+- OpenCV 중복: 이 이미지는 OpenCV 4.10 을 소스 빌드해 `/usr/local` 에 설치하는데,
+  `ros-jazzy-cv-bridge` 가 apt 의존성으로 noble 시스템 OpenCV(4.6)를 함께 끌어옴.
+  cv-bridge(C++ 노드)는 apt OpenCV 에, Python `cv2` 는 소스 빌드 4.10 에 링크되는
+  이원 구조가 되며 보통 공존 가능하나 동일 프로세스에서 섞으면 충돌 소지 있음
+- 적용 확인:
+  ```bash
+  docker exec vscode-tunnel bash -lc 'source /opt/ros/jazzy/setup.bash && ros2 --version'
+  ```
+
+### Migration
+- 우분투 PC 기존 사용자: 이미지 재빌드 필요
+  ```bash
+  ./reload.sh
+  ```
+- Mac 사용자: 영향 없음 (ROS 미설치, 기존 동작과 동일)
+
 ## v1.12.0 (2026-06-11)
 
 ### Added

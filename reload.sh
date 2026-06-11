@@ -18,6 +18,13 @@ set -e
 # (start.sh와 동일한 감지 로직 — 새 오버레이가 늘면 양쪽 모두 갱신할 것)
 COMPOSE_ARGS="-f docker-compose.yml"
 
+# ROS2 Jazzy 는 Linux 호스트(우분투 PC)에서만 이미지에 설치한다.
+# Mac(Darwin) 에서는 INSTALL_ROS 미설정 -> docker-compose.yml 의 기본값 false 로 스킵.
+if [ "$(uname -s)" = "Linux" ]; then
+    echo "Linux host detected: enabling ROS2 Jazzy install in image build"
+    export INSTALL_ROS=true
+fi
+
 if command -v nvidia-smi > /dev/null 2>&1 && nvidia-smi > /dev/null 2>&1; then
     echo "GPU detected: enabling GPU support"
     COMPOSE_ARGS="$COMPOSE_ARGS -f docker-compose.gpu.yml"
