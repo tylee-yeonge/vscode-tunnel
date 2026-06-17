@@ -180,6 +180,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends tzdata \
     && dpkg-reconfigure -f noninteractive tzdata \
     && rm -rf /var/lib/apt/lists/*
 
+# ========================================
+# HuggingFace 캐시 경로 고정
+# 기본값(~/.cache/huggingface)과 동일 경로지만, named volume 마운트 지점을
+# 명시적으로 박아 두기 위함. 실제 영속화는 docker-compose.yml 의 hf-cache
+# named volume 마운트가 담당한다(이 ENV 단독으로는 보존되지 않음).
+# transformers / datasets / huggingface_hub / hub modules 가 모두 HF_HOME 을 따른다.
+# ========================================
+ENV HF_HOME=/root/.cache/huggingface
+
 WORKDIR /workspace
 
 # ========================================

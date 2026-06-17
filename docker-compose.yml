@@ -52,6 +52,11 @@ services:
       # Study Timer 일별 JSON 저장소 (nanobot-docker가 external volume으로 공유)
       - study-timer-data:/root/.study-timer
 
+      # HuggingFace 모델/데이터 캐시 (OpenVLA 7B 약 14-15GB).
+      # 컨테이너 recreate 시 writable layer 와 함께 삭제되는 것을 막기 위해
+      # named volume 으로 분리. HF_HOME 은 Dockerfile 에서 같은 경로로 고정.
+      - hf-cache:/root/.cache/huggingface
+
       # 타임존은 Dockerfile에서 ARG TZ로 이미지에 영구 고정함.
       # 호스트의 /etc/localtime은 심볼릭 링크라 bind mount 시 컨테이너 내부
       # 심볼릭 링크와 충돌하여 IANA tz 추론을 망가뜨리므로 마운트하지 않는다.
@@ -61,3 +66,5 @@ volumes:
   vscode-server-data:
   study-timer-data:
     name: study-timer-data
+  hf-cache:
+    name: hf-cache

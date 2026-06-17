@@ -96,6 +96,7 @@ volumes:
   - vscode-server-data:/root/.vscode-server  # VS Code 서버/익스텐션 데이터 유지
   - ~/.claude:/root/.claude                  # Claude Code 인증 공유
   - study-timer-data:/root/.study-timer      # Study Timer 일별 JSON 저장소
+  - hf-cache:/root/.cache/huggingface        # HuggingFace 모델 캐시 (recreate 보존)
 ```
 
 > Timezone은 Dockerfile에서 `Asia/Seoul`로 영구 고정됩니다 (`.env`의 `TZ`로
@@ -132,6 +133,74 @@ BASE_IMAGE=nvidia/cuda:12.6.3-cudnn-devel-ubuntu24.04
 | 추론 전용 | `nvidia/cuda:12.6.3-cudnn-runtime-ubuntu24.04` |
 
 Mac은 미설정 → 기본값 `ubuntu:24.04`로 빌드되어 영향 없음.
+
+---
+
+## HuggingFace 캐시 영속화
+
+OpenVLA 7B 등 대용량 모델 가중치(약 14-15GB)를 컨테이너 recreate(`up -d --build`,
+`down`+`up`, 설정 변경) 시에도 보존하기 위해 `hf-cache` named volume 을
+`/root/.cache/huggingface` 에 마운트합니다 (v1.14.0+).
+
+**증상 (변경 전)**: `HF_HOME` 미설정이라 기본값 `/root/.cache/huggingface` 로 캐시가
+떨어지는데, 이 경로가 어떤 volume 에도 마운트돼 있지 않아 writable layer 에 쌓였습니다.
+`reload.sh` 가 컨테이너를 recreate 할 때마다 캐시 전체가 폐기되어 매번 14-15GB
+재다운로드가 발생했습니다.
+
+**기본 동작 (변경 후)**: `Dockerfile` 의 `ENV HF_HOME=/root/.cache/huggingface` 로
+경로를 명시 고정하고, `docker-compose.yml` 의 서비스 volumes 에
+`hf-cache:/root/.cache/huggingface` 마운트 + top-level `hf-cache:` 선언(`name: hf-cache`)
+을 추가했습니다. 실제 영속화를 만드는 load-bearing 변경은 volume 마운트이고,
+`ENV` 는 마운트 지점을 박아 두는 보조 역할입니다.
+
+| 자산 | 위치 | recreate 시 |
+|---|---|---|
+| HF 모델 캐시 | `/root/.cache/huggingface` (named volume `hf-cache`) | 보존 |
+| HF 토큰 (`huggingface-cli login` 사용 시) | `$HF_HOME/token` | 보존 (재로그인 불필요) |
+
+> **한계**: 변경 직후 첫 recreate 1회는 빈 볼륨 초기화라 여전히 재다운로드가
+> 발생합니다. 이후 recreate 부터 캐시가 보존됩니다. 또한 nf4 양자화본은 디스크에
+> 받는 게 아니라 로드 시점에 bf16 베이스에서 계산되므로, 영속화 대상은 bf16
+> 베이스(약 14-15GB)뿐입니다.
+
+**데이터 디스크로 이전 (옵션 B)**: named volume 은 docker data-root
+(`/var/lib/docker/volumes`) 하위에 잡힙니다. root 파티션 여유가 부족하면
+`.env` 의 `HF_CACHE_PATH` 와 `docker-compose.local.yml` 을 함께 써서 host bind mount
+로 데이터 디스크에 둘 수 있습니다.
+
+```env
+# .env
+HF_CACHE_PATH=/data/hf-cache
+```
+
+```yaml
+# docker-compose.local.yml (gitignored)
+services:
+  vscode-tunnel:
+    volumes:
+      - ${HF_CACHE_PATH}:/root/.cache/huggingface
+```
+
+> 동일 target 마운트를 override 가 대체하는 것은 Docker Compose v2 머지 규칙이지만
+> 버전/구현에 따라 concat 될 수 있으므로, 적용 전 `docker compose config` 로 머지
+> 결과에 `/root/.cache/huggingface` target 이 bind mount 단일로 잡히는지 확인하세요.
+
+**검증**:
+
+```bash
+# HF_HOME 고정 확인
+docker exec vscode-tunnel printenv HF_HOME
+# /root/.cache/huggingface
+
+# 볼륨 생성 확인 (name: hf-cache 고정 덕에 프로젝트 프리픽스 없이 조회됨)
+docker volume inspect hf-cache
+
+# 첫 모델 로드 후 용량 확인
+docker exec vscode-tunnel du -sh /root/.cache/huggingface/hub
+# 약 14-15GB (OpenVLA 7B 기준)
+```
+
+Mac 등 HF 모델을 사용하지 않는 호스트에서는 빈 볼륨만 생성되어 무해합니다.
 
 ---
 
@@ -245,6 +314,7 @@ docker exec vscode-tunnel bash -lc 'source /opt/ros/jazzy/setup.bash && ros2 --v
 | GPU | `docker-compose.gpu.yml` | commit | `nvidia-smi` 동작 |
 | USB 카메라 | `docker-compose.camera.yml` | commit | `/dev/video0` 존재 |
 | 머신별 마운트 | `docker-compose.local.yml` | gitignored | 파일 존재 |
+| HF 캐시 위치 | `docker-compose.local.yml` + `.env`의 `HF_CACHE_PATH` | gitignored | `.env`에 `HF_CACHE_PATH` 설정 (미설정 시 named volume `hf-cache` 사용) |
 | Multi-host 사이드카 | `docker-compose.tailscale.yml` + `.env`의 `TAILSCALE_IP` | commit (파일) / gitignored (값) | `.env`에 `TAILSCALE_IP` 설정 |
 
 Ubuntu 학습 호스트의 전형적 셋업 절차는 [UBUNTU_SETUP.md](UBUNTU_SETUP.md) 참조.

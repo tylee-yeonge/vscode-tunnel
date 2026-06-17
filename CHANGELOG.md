@@ -1,5 +1,46 @@
 # Changelog
 
+## v1.14.0 (2026-06-17)
+
+### Added
+- HuggingFace 캐시 영속화용 named volume `hf-cache` 추가
+  - `docker-compose.yml`: `hf-cache:/root/.cache/huggingface` 마운트 +
+    top-level `volumes:` 에 `hf-cache:` 선언(`name: hf-cache` 로 프로젝트
+    프리픽스 없이 고정 — 검증/롤백 명령 안정화)
+  - `Dockerfile`: `ENV HF_HOME=/root/.cache/huggingface` 로 캐시 경로를
+    명시 고정. 기존 기본값과 같은 경로지만 마운트 지점을 박아 두기 위함
+  - 컨테이너 recreate(`up -d --build` / `down`+`up`) 시 writable layer 와
+    함께 삭제되던 OpenVLA 7B 등 대용량 모델 캐시(약 14-15GB)를 보존
+
+### Changed
+- `.env.sample`: 데이터 디스크로 캐시를 빼고 싶을 때를 위한 `HF_CACHE_PATH`
+  주석 안내 추가(`docker-compose.local.yml` 과 함께 사용)
+- `README.md`: 볼륨 구성 표에 `hf-cache` 라인, "HuggingFace 캐시 영속화"
+  섹션, 머신별 오버라이드 표 1행 추가
+
+### Notes
+- 변경 직후 첫 recreate 1회는 빈 볼륨 초기화라 여전히 재다운로드됨. 이후
+  recreate 부터 캐시 보존
+- nf4 양자화본은 디스크에 받는 게 아니라 로드 시 bf16 베이스에서 계산되므로
+  영속화 대상은 bf16 베이스(약 14-15GB)뿐
+- `huggingface-cli login` 으로 토큰을 쓰는 경우 토큰(`$HF_HOME/token`)도 함께
+  보존돼 recreate 후 재로그인 불필요(현재 코드는 토큰 미사용)
+- named volume 은 docker data-root(`/var/lib/docker/volumes`) 아래에 잡힘.
+  root 파티션 여유가 부족하면 `HF_CACHE_PATH` + `docker-compose.local.yml`
+  로 데이터 디스크에 bind mount
+- Mac: HF 모델 미사용이라 빈 볼륨만 생성, 기존 동작과 동일
+
+### Migration
+- 기존 사용자: 컨테이너 재빌드 + 재기동 필요
+  ```bash
+  ./reload.sh
+  ```
+- 적용 확인:
+  ```bash
+  docker exec vscode-tunnel printenv HF_HOME
+  docker volume ls | grep hf-cache
+  ```
+
 ## v1.13.0 (2026-06-11)
 
 ### Added
