@@ -1,5 +1,32 @@
 # Changelog
 
+## v1.14.1 (2026-06-24)
+
+### Fixed
+- GitHub 토큰 만료를 watchdog가 직접 감지하도록 보강 (`entrypoint.sh`)
+  - 기존 헬스체크는 `code tunnel status` 의 `Connected` 여부에만 의존했는데,
+    GitHub 토큰이 만료된 뒤에도 `status` 가 stale `Connected` 를 반환하는 맹점이
+    있어 watchdog가 토큰 만료를 인지하지 못했음
+  - `code tunnel` 출력을 `/tmp/tunnel.log` 로 redirect 하고, 헬스체크가 로그에서
+    `access token is no longer valid` / `Bad credentials` 메시지를 직접 grep 하여
+    토큰 만료를 즉시 감지
+
+### Changed
+- 토큰 무효 감지 시 복구 동작 분리 (`entrypoint.sh`)
+  - `check_tunnel_health` 가 토큰 무효일 때 별도 종료코드(`2`)를 반환
+  - 토큰 무효는 재시작이나 컨테이너 종료로 고쳐지지 않으므로(같은 죽은 토큰
+    재사용) 재시도 카운트를 올리지 않고 컨테이너를 살려둔 채 터널만 재시작해
+    `code tunnel` 이 새 device code 를 발급하도록 함 (사용자 재인증 대기)
+  - 터널 로그를 `tail -F` 로 컨테이너 stdout 에도 흘려보내, `docker compose logs`
+    에서 device code 등 터널 메시지를 볼 수 있게 함
+  - 터널 재시작마다 로그 파일을 비워 과거 에러의 오탐 방지
+
+### Notes
+- 재인증 방법:
+  ```bash
+  docker compose exec vscode-tunnel code tunnel user login --provider github
+  ```
+
 ## v1.14.0 (2026-06-17)
 
 ### Added

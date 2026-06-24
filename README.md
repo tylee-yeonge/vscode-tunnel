@@ -490,6 +490,7 @@ vscode-tunnel 컨테이너를 먼저 기동해 볼륨이 생성된 이후에 nan
 
 | 검사 항목 | 설명 |
 |-----------|------|
+| GitHub 토큰 만료 | 터널 로그(`/tmp/tunnel.log`)에서 `access token is no longer valid` / `Bad credentials` 메시지 감지 |
 | 프로세스 생존 | 터널 프로세스가 살아있는지 확인 |
 | 프로세스 중복 | `code tunnel` 프로세스가 2개 이상이면 비정상 |
 | 터널 상태 | `code tunnel status`의 상태가 `Connected`인지 확인 |
@@ -497,6 +498,10 @@ vscode-tunnel 컨테이너를 먼저 기동해 볼륨이 생성된 이후에 nan
 - 비정상 감지 시 터널을 자동 재시작합니다.
 - 3회 연속 복구 실패 시 컨테이너를 종료하고, Docker의 `restart: unless-stopped` 정책으로 컨테이너 자체가 재시작됩니다.
 - 초기 시작 후 5분간은 grace period를 적용하여 GitHub 인증 대기 중 오탐을 방지합니다.
+- **GitHub 토큰 만료**는 재시작/컨테이너 종료로 고쳐지지 않으므로(같은 죽은 토큰 재사용) 예외 처리합니다. `code tunnel status`는 토큰 만료 후에도 stale `Connected`를 반환하므로, 터널 로그를 직접 grep 하여 만료를 감지합니다. 감지 시 재시도 카운트를 올리지 않고 컨테이너를 유지한 채 터널만 재시작해 새 device code를 재발급합니다 (v1.14.1). 재인증:
+  ```bash
+  docker compose exec vscode-tunnel code tunnel user login --provider github
+  ```
 
 ---
 

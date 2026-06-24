@@ -9,6 +9,7 @@ TUNNEL_NAME="${TUNNEL_NAME:-my-vscode-tunnel}"
 CHECK_INTERVAL=120   # 상태 확인 주기 (초)
 MAX_RETRIES=3        # 연속 복구 실패 허용 횟수
 STARTUP_GRACE=300    # 초기 시작 후 헬스체크 면제 시간 (초, 인증 대기 고려)
+TUNNEL_LOG=/tmp/tunnel.log   # code tunnel CLI 출력 로그 (토큰 만료 감지용)
 
 retry_count=0
 start_time=0
@@ -157,7 +158,11 @@ start_tunnel() {
     sleep 3
 
     echo "[watchdog] 터널 시작: ${TUNNEL_NAME}"
-    code tunnel --name "${TUNNEL_NAME}" --accept-server-license-terms &
+    # 터널 출력을 로그 파일로 남겨 watchdog가 인증 실패(토큰 만료)를 직접 감지하게 한다.
+    # code tunnel status는 토큰 만료 후에도 stale "Connected"를 반환하는 맹점이 있어
+    # 로그 기반 감지가 필요하다. 재시작 시 파일을 비워 과거 에러의 오탐을 막는다.
+    : > "$TUNNEL_LOG"
+    code tunnel --name "${TUNNEL_NAME}" --accept-server-license-terms >> "$TUNNEL_LOG" 2>&1 &
     TUNNEL_PID=$!
     start_time=$(date +%s)
     sleep 10
@@ -175,6 +180,15 @@ check_tunnel_health() {
             echo "[watchdog] grace period 중 프로세스 사망"
             return 1
         fi
+    fi
+
+    # 0) GitHub 토큰 무효 감지 (로그 기반)
+    # code tunnel status가 토큰 만료 후에도 stale "Connected"를 반환하는 맹점을 보완한다.
+    # CLI가 출력하는 인증 실패 메시지를 직접 확인해 토큰 만료를 즉시 잡아낸다.
+    if grep -qE "access token is no longer valid|Bad credentials" "$TUNNEL_LOG" 2>/dev/null; then
+        echo "[watchdog] GitHub 토큰 무효 감지 - 재인증 필요"
+        echo "[watchdog] 호스트에서: docker compose exec vscode-tunnel code tunnel user login --provider github"
+        return 2
     fi
 
     # 1) 메인 프로세스 생존 확인
@@ -232,6 +246,12 @@ setup_ssh
 # Study Timer extension 배치 (tunnel 시작 전)
 deploy_study_timer
 
+# 터널 로그 파일을 컨테이너 stdout(docker logs)으로도 흘려보낸다.
+# code tunnel 출력이 $TUNNEL_LOG로 redirect되므로, 이 tail이 없으면
+# docker compose logs에서 device code 등 터널 메시지가 보이지 않는다.
+: > "$TUNNEL_LOG"
+tail -F "$TUNNEL_LOG" 2>/dev/null &
+
 # 최초 시작
 start_tunnel
 
@@ -240,8 +260,16 @@ while true; do
     sleep "$CHECK_INTERVAL" &
     wait $!
 
-    if check_tunnel_health; then
+    check_tunnel_health
+    health_rc=$?
+    if [ "$health_rc" -eq 0 ]; then
         retry_count=0
+    elif [ "$health_rc" -eq 2 ]; then
+        # 토큰 무효는 재시작이나 컨테이너 종료로 고쳐지지 않는다(같은 죽은 토큰 재사용).
+        # 재시도 카운트를 올리지 않아 컨테이너를 살려두고, 터널만 재시작해
+        # code tunnel이 새 device code를 발급하도록 한다 (사용자 재인증 대기).
+        echo "[watchdog] 터널 재시작 (재인증용 device code 재발급, 컨테이너 유지)"
+        start_tunnel
     else
         retry_count=$((retry_count + 1))
         echo "[watchdog] 비정상 감지 (${retry_count}/${MAX_RETRIES})"
