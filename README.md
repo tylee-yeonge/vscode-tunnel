@@ -94,10 +94,27 @@ volumes:
   - ~/.ssh:/root/.ssh-host:ro                # SSH 키 (entrypoint가 /root/.ssh로 복사하며 권한 보정)
   - vscode-cli-data:/root/.vscode/cli        # tunnel 인증 상태 유지
   - vscode-server-data:/root/.vscode-server  # VS Code 서버/익스텐션 데이터 유지
-  - ~/.claude:/root/.claude                  # Claude Code 인증 공유
+  - claude-config:/root/.claude              # Claude Code 설정/인증 (컨테이너 전용, 최초 1회 로그인)
+  - ~/.claude:/root/.claude-host:ro          # 호스트 Claude 설정 원본 (entrypoint가 CLAUDE.md/settings.json/rules 복사)
   - study-timer-data:/root/.study-timer      # Study Timer 일별 JSON 저장소
   - hf-cache:/root/.cache/huggingface        # HuggingFace 모델 캐시 (recreate 보존)
 ```
+
+> Claude Code 인증은 호스트와 공유하지 않습니다. 호스트 `~/.claude` 를 그대로
+> 마운트하면 컨테이너(root)가 토큰을 갱신할 때 `.credentials.json` 이 root 소유
+> 새 파일로 바뀌어 Linux 호스트의 Claude Code 가 읽지 못하고 로그아웃됩니다
+> (Mac 은 Docker Desktop 이 bind mount 소유권을 호스트 사용자로 매핑해 증상이
+> 없음). 컨테이너를 처음 올린 뒤 한 번만 로그인하면 `claude-config` volume 에
+> 남아 `reload.sh` 후에도 유지됩니다. 터널로 연 VS Code 의 Claude 패널에서
+> Sign in 을 눌러도 됩니다.
+>
+> ```bash
+> docker compose exec vscode-tunnel claude auth login
+> ```
+>
+> 호스트의 `CLAUDE.md`, `settings.json`, `rules/` 는 컨테이너 시작 시 복사됩니다
+> (호스트 -> 컨테이너 단방향). 컨테이너 안에서 바꾼 설정은 호스트로 돌아가지
+> 않고 다음 시작 때 호스트 원본으로 덮입니다.
 
 > Timezone은 Dockerfile에서 `Asia/Seoul`로 영구 고정됩니다 (`.env`의 `TZ`로
 > 오버라이드 가능). 이전에 사용하던 `/etc/localtime`/`/etc/timezone` bind mount는

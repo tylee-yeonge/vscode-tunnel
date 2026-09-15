@@ -1,5 +1,32 @@
 # Changelog
 
+## v1.14.2 (2026-09-15)
+
+### Fixed
+- Linux 호스트의 Claude Code 가 주기적으로 로그아웃되는 문제 (`docker-compose.yml`,
+  `entrypoint.sh`)
+  - 호스트 `~/.claude` 를 컨테이너 `/root/.claude` 에 그대로 bind mount 하고 있어,
+    컨테이너(root)의 Claude Code 가 약 8시간마다 토큰을 갱신할 때
+    `.credentials.json` 을 root 소유 새 파일로 교체함. Claude Code 는 Linux 에서
+    `EACCES` 를 "자격증명 없음"으로 처리하므로 호스트 쪽이 로그아웃 상태가 되어
+    재로그인이 반복됐음 (Mac 은 Docker Desktop 이 bind mount 소유권을 호스트
+    사용자로 매핑해 증상 없음)
+  - 컨테이너 Claude Code 설정/인증을 named volume `claude-config` 로 분리하고
+    `CLAUDE_CONFIG_DIR=/root/.claude` 를 명시해 `.claude.json`(온보딩/프로젝트
+    신뢰 상태)도 volume 에 보존
+  - 호스트 `~/.claude` 는 `/root/.claude-host` 로 읽기 전용 마운트하고, entrypoint
+    `setup_claude_config` 가 `CLAUDE.md`, `settings.json`, `rules/` 만 복사
+    (호스트 -> 컨테이너 단방향, 컨테이너 시작 시점 스냅샷)
+
+### Notes
+- 적용 후 컨테이너에서 한 번 로그인해야 함 (volume 에 남아 `reload.sh` 후에도
+  유지):
+  ```bash
+  docker compose exec vscode-tunnel claude auth login
+  ```
+- 기존 공유 디렉터리에 컨테이너가 남긴 root 소유 파일은 호스트에서 정리:
+  `sudo chown -R "$USER:$USER" ~/.claude`
+
 ## v1.14.1 (2026-06-24)
 
 ### Fixed
