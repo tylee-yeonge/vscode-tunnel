@@ -90,12 +90,14 @@ rm -rf "$TMP"
 
 진행 상황 (2026-09-15): Step 3, 4 통과. `compose config` 에 `CLAUDE_CONFIG_DIR: /root/.claude`, `source: claude-config`, `target: /root/.claude-host`, top-level `name: claude-config` 렌더링 확인. `sh -n`, `dash -n` 출력 없음. alpine 단독 실행에서 `CLAUDE.md`, `settings.json`, `rules/`(8개 파일) 복사되고 호스트 원본과 `cmp`/`diff -r` 동일, `.credentials.json` 미생성, 마운트 없이 실행 시 `rc=0` 이고 `/root/.claude` 미생성.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add docker-compose.yml entrypoint.sh
 git commit -m "fix: isolate container claude config from host to stop host logouts"
 ```
+
+진행 상황 (2026-09-15): `ec86190` 으로 커밋. 작업 트리에 함께 있던 `entrypoint.sh` 의 무관한 미커밋 변경(릴레이 단절 미복구 감지, `RECONNECT_GRACE`)은 HEAD 로 되돌린 뒤 이 Task 의 변경만 재적용해 커밋하고, 커밋 후 원래 파일을 복원해 작업 트리에 그대로 남겼다.
 
 ---
 
@@ -111,12 +113,14 @@ git commit -m "fix: isolate container claude config from host to stop host logou
 
 - [x] **Step 3: 검증 — `git diff README.md CHANGELOG.md` 로 변경 범위 확인**
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add README.md CHANGELOG.md
 git commit -m "docs: describe isolated claude config volume and one-time login"
 ```
+
+진행 상황 (2026-09-15): `59e2a0e` 으로 커밋 (이 plan 문서 포함).
 
 ---
 
@@ -124,7 +128,7 @@ git commit -m "docs: describe isolated claude config volume and one-time login"
 
 `reload.sh` 가 터널을 끊으므로 실행 시점은 사용자가 정한다. 순서를 바꾸면 안 된다: seed 는 `down` 전에 해야 현재 컨테이너의 `.claude.json` 을 가져올 수 있다.
 
-- [ ] **Step 1: volume seed (현재 컨테이너가 살아 있는 상태에서)**
+- [x] **Step 1: volume seed (현재 컨테이너가 살아 있는 상태에서)**
 
 ```bash
 cd ~/Documents/vscode-tunnel
@@ -149,12 +153,16 @@ rm -rf "$SEED"
 
 기대: `/dst` 에 `.claude.json`, `projects/-workspace-study-physical-ai-study`, `projects/-workspace-study-visual-slam-and-perception-learning`, `plugins`, `file-history`, `history.jsonl`.
 
-- [ ] **Step 2: 컨테이너 재생성**
+진행 상황 (2026-09-15): 완료, volume 59.4MB. `docker volume create` 로 먼저 만든 volume 은 compose 라벨이 없어 매 compose 명령마다 "not created by Docker Compose" 경고가 나므로, Step 2 이후 volume 을 tar 로 백업 -> 컨테이너 stop/rm -> `docker volume rm claude-config` -> `docker compose up --no-start` (compose 가 라벨 붙여 생성) -> tar 복원 -> `start` 순으로 compose 소유로 재생성했다. 경고 없음 확인. 다른 머신에서는 Step 1 의 `docker volume create` 를 생략하고 `./reload.sh` 가 만들게 한 뒤 seed 하는 편이 낫다.
+
+- [x] **Step 2: 컨테이너 재생성**
 
 ```bash
 ./reload.sh
 docker compose logs vscode-tunnel 2>&1 | grep "Claude Code 공유 설정 복사"
 ```
+
+진행 상황 (2026-09-15): 완료. 로그에 `Claude Code 공유 설정 복사 완료 (CLAUDE.md, settings.json, rules/)` 출력, `CLAUDE_CONFIG_DIR=/root/.claude`, `/root/.claude-host` 에 `touch` 시 `Read-only file system`, `/root/.claude` 에 seed 데이터와 복사본 존재, 컨테이너 healthy. `reload.sh` 의 로그 필터(`vscode CLI|study-timer|SSH`)에는 이 라인이 안 잡히므로 `docker logs` 로 직접 확인해야 한다.
 
 - [ ] **Step 3: 컨테이너 로그인 (1회)**
 
@@ -165,7 +173,9 @@ docker compose exec vscode-tunnel claude auth status
 
 기대: `loggedIn: true`, `email: tylee.yeonge@gmail.com`. 터널로 연 VS Code 의 Claude 패널 Sign in 으로 대체 가능.
 
-- [ ] **Step 4: 호스트 정리**
+진행 상황 (2026-09-15): 사용자 실행 대기. 브라우저 OAuth 승인이 필요해 비대화형 세션에서 대신할 수 없다. 현재 컨테이너 `claude auth status` 는 `loggedIn: false`.
+
+- [x] **Step 4: 호스트 정리**
 
 ```bash
 sudo chown -R "$USER:$USER" ~/.claude
@@ -186,6 +196,8 @@ systemctl --user daemon-reload
 rm -rf ~/.claude/projects/-workspace-*
 ```
 
+진행 상황 (2026-09-15): `sudo` 가 비대화형으로 불가해 소유권 복구는 `docker run --rm -v /home/thira/.claude:/x alpine chown -Rh 1000:1000 /x` 로 수행했다(docker 그룹 = root 동등). 결과 root 소유 항목 0개, `~/.claude` 의 git 동작 복구. 타이머는 `disable --now` 후 유닛 파일 2개 삭제, `daemon-reload` 완료. 호스트에 남은 `projects/-workspace-*` 사본은 삭제하지 않았다(17MB, 호스트 Claude Code 가 참조하지 않는 경로라 무해).
+
 - [ ] **Step 5: 검증 — 이행 완료**
 
 ```bash
@@ -194,6 +206,8 @@ stat -c '%U %n' ~/.claude/.credentials.json
 ```
 
 기대: 컨테이너 파일은 root 소유로 volume 안에 존재, 호스트 파일은 thira 소유.
+
+진행 상황 (2026-09-15): 호스트 `.credentials.json` thira 소유, 컨테이너 `/root/.claude/.claude.json` 과 `projects/-workspace-*` 존재까지 확인. 컨테이너 `.credentials.json` 은 Step 3 로그인 후 생긴다.
 
 ---
 
