@@ -112,6 +112,8 @@ TZ=Asia/Seoul
 BASE_IMAGE=nvidia/cuda:12.6.3-cudnn-devel-ubuntu24.04
 DATASETS_PATH=/data/datasets
 # TAILSCALE_IP=100.x.y.z   # 3-5 사이드카 활성화 시 코멘트 해제
+# SO101_FOLLOWER_SERIAL=XXXXXXXXXX   # 3-8 SO-ARM101 사용 시 코멘트 해제
+# SO101_LEADER_SERIAL=YYYYYYYYYY
 ```
 
 - `TUNNEL_NAME`은 Mac(`mac-mini`)과 달라야 함 (전 세계 고유)
@@ -172,6 +174,7 @@ docker logs vscode-tunnel | grep "use code"
   - `nvidia-smi` → `-f docker-compose.gpu.yml`
   - `docker-compose.local.yml` 존재 → `-f docker-compose.local.yml`
   - `.env`의 활성 `TAILSCALE_IP=` 라인 → `-f docker-compose.tailscale.yml`
+  - `.env`의 활성 `SO101_FOLLOWER_SERIAL=` / `SO101_LEADER_SERIAL=` 라인 → `-f docker-compose.so101.yml`
 - 출력되는 URL과 코드로 GitHub tunnel 인증 1회
 - `/root/.vscode/cli` 볼륨에 토큰 영속화 (이후 재시작 시 재인증 불필요)
 
@@ -187,6 +190,20 @@ docker exec vscode-tunnel python3 -c "import torch; print(torch.cuda.is_availabl
 ```bash
 curl http://ubuntu-dev:8765/             # 파일 목록 JSON
 curl http://ubuntu-dev:8765/<날짜>.json   # study-timer 데이터
+```
+
+### 3-8. SO-ARM101 서보 보드 (선택, `SO101_*_SERIAL`)
+LeRobot SO-ARM101 leader/follower 를 컨테이너 안에서 쓰기 위한 패스스루. 팔을
+평소에 빼두는 운용을 전제로, 컨테이너 생성 시 팔이 없어도 되고 꽂은 뒤
+`so101-attach` 로 노드를 만든다. 절차와 lerobot venv 설치는 README 의
+"SO-ARM101 서보 보드 (LeRobot)" 절 참조.
+
+```bash
+ls -l /dev/serial/by-id/                    # 팔 2대 USB 연결 후, Serial_ 뒤 10자리
+# .env 의 SO101_FOLLOWER_SERIAL / SO101_LEADER_SERIAL 라인 활성화
+./start.sh                                  # .env 변경으로 컨테이너 1회 재생성
+docker exec vscode-tunnel so101-attach      # 팔(과 카메라)을 꽂은 뒤 매번
+docker exec vscode-tunnel so101-attach list # 카메라 USB 경로 확인 -> .env 의 SO101_CAM_*_USB 설정 (선택)
 ```
 
 ## 4. 운영 팁

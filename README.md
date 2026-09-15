@@ -15,6 +15,7 @@ Mac(Apple Silicon)과 Ubuntu(x86_64) 모두 별도 수정 없이 동작합니다
 | VS Code CLI | stable / 빌드 시 호스트 아키텍처 자동 감지 (arm64, x64) / 매 컨테이너 시작 시 최신 stable 로 자동 갱신 (v1.9.0+) |
 | Claude Code | 최신 버전 (native installer) |
 | 빌드 도구 | CMake, Ninja, GDB, build-essential |
+| SO-ARM101 지원 | `python3-venv`(lerobot venv 생성), `libavdevice60` / `libavfilter9`(torchcodec FFmpeg 런타임), alias `acl` / `so101-teleop` / `so101-help` (v1.15.0+) |
 
 ---
 
@@ -45,6 +46,10 @@ WORKSPACE_PATH=./workspace      # 컨테이너에 마운트할 작업 디렉토�
 | `BASE_IMAGE` | `ubuntu:24.04` | 빌드 베이스 이미지. CUDA 사용 시 `nvidia/cuda:12.6.3-cudnn-devel-ubuntu24.04` 권장 |
 | `DATASETS_PATH` | (미설정) | 데이터셋 호스트 경로. `docker-compose.local.yml`과 함께 사용 |
 | `TAILSCALE_IP` | (미설정) | Tailscale IP. 설정 시 `study-timer-http` 사이드카(`:8765`) 자동 동반 기동 |
+| `SO101_FOLLOWER_SERIAL` | (미설정) | SO-ARM101 follower 보드의 USB 시리얼 번호. `SO101_LEADER_SERIAL` 과 함께 설정 시 `docker-compose.so101.yml` 자동 적용 (Linux 전용) |
+| `SO101_LEADER_SERIAL` | (미설정) | SO-ARM101 leader 보드의 USB 시리얼 번호 |
+| `SO101_CAM_WRIST_USB` | (미설정) | SO-ARM101 손목 카메라의 USB 인터페이스 경로 (예: `1-7.1:1.0`, `so101-attach list` 로 확인). 설정 시 `so101-attach` 가 `/dev/so101_cam_wrist` 생성 |
+| `SO101_CAM_OVERVIEW_USB` | (미설정) | SO-ARM101 전체 뷰 카메라의 USB 인터페이스 경로. 설정 시 `/dev/so101_cam_overview` 생성 |
 
 > `.env` 파일은 `.gitignore`에 등록되어 있어 Git에 커밋되지 않습니다.
 
@@ -61,10 +66,11 @@ WORKSPACE_PATH=./workspace      # 컨테이너에 마운트할 작업 디렉토�
 | (기본) | `-f docker-compose.yml` |
 | `nvidia-smi` 동작 | `-f docker-compose.gpu.yml` (GPU 활성화) |
 | `/dev/video0` 존재 | `-f docker-compose.camera.yml` (ELP 스테레오 카메라 패스스루) |
+| `.env`의 활성 `SO101_FOLLOWER_SERIAL=` / `SO101_LEADER_SERIAL=` 라인 | `-f docker-compose.so101.yml` (SO-ARM101 서보 보드 패스스루) |
 | `docker-compose.local.yml` 존재 | `-f docker-compose.local.yml` (머신별 오버라이드, gitignored) |
 | `.env`의 활성 `TAILSCALE_IP=` 라인 | `-f docker-compose.tailscale.yml` (study-timer 사이드카) |
 
-Mac에서 `BASE_IMAGE`/`TAILSCALE_IP`/local 파일을 모두 미설정 시 기존 동작
+Mac에서 `BASE_IMAGE`/`TAILSCALE_IP`/`SO101_*_SERIAL`/local 파일을 모두 미설정 시 기존 동작
 (ubuntu:24.04 + 단일 docker-compose.yml)과 완전히 동일합니다.
 
 ### 3. VS Code tunnel 인증
@@ -77,6 +83,12 @@ docker compose logs -f
 
 로그에 출력되는 URL과 코드를 브라우저에서 입력해 GitHub 계정으로 인증합니다.
 인증 정보는 `vscode-cli-data` 볼륨(`/root/.vscode/cli`)에 저장되므로 이후 재시작 시 재인증 불필요합니다.
+
+> VS Code CLI는 keyring이 없는 컨테이너에서 이 토큰을 hostname에 묶어 암호화합니다.
+> `docker-compose.yml`의 `hostname: vscode-tunnel` 고정이 함께 있어야 recreate 후에도 토큰을
+> 읽을 수 있으며(v1.15.0+), hostname을 바꾸면 1회 재로그인이 필요합니다. 미인증 상태가 5분을
+> 넘으면 watchdog가 터널을 재시작해 device 코드가 바뀌므로 최신 코드는
+> `docker logs vscode-tunnel 2>&1 | grep "use code" | tail -1` 로 확인합니다.
 
 ### 4. 외부에서 접속
 
@@ -270,6 +282,214 @@ docker exec vscode-tunnel ls -l /dev/video*
 
 ---
 
+## SO-ARM101 서보 보드 (LeRobot)
+
+호스트에서 조립·캘리브레이션을 마친 SO-ARM101 leader/follower 를 컨테이너 안의
+lerobot 에서 쓰기 위한 패스스루입니다. 팔은 평소에 빼두고 쓸 때만 꽂는 운용을
+전제로, 컨테이너 생성 시점에 장치를 고정하는 `devices` 대신 두 단계로 동작합니다.
+
+1. `docker-compose.so101.yml` 이 USB 시리얼(ttyACM, major 166)과 video4linux(major 81)
+   전체에 cgroup 접근 권한만 열어 둡니다. 컨테이너 생성 시 장치가 꽂혀 있을 필요가
+   없습니다.
+2. 장치를 꽂은 뒤 컨테이너 안에서 `so101-attach` 를 실행하면, 호스트와 공유되는
+   sysfs 에서 보드는 USB 시리얼 번호로, 카메라는 USB 인터페이스 경로로 찾아
+   `/dev/so101_follower`, `/dev/so101_leader`, `/dev/so101_cam_wrist`,
+   `/dev/so101_cam_overview` 노드를 `mknod` 로 만듭니다. 다시 꽂아 `ttyACM` / `video`
+   번호가 바뀌어도 재실행하면 갈아 끼웁니다. 컨테이너 재생성이 없습니다.
+
+Linux 호스트 전용입니다 (Docker Desktop for Mac 은 USB 시리얼 패스스루를 지원하지
+않음).
+
+**빠른 참조** (컨테이너 안에서 `so101-help` 로 같은 내용 출력):
+
+```bash
+so101-attach          # 팔과 카메라를 꽂은 뒤 매번. 노드 4개 생성
+so101-attach list     # 보드 시리얼 / 카메라 USB 경로 조회
+acl                   # venv 활성화
+so101-teleop          # 가이드 7절 텔레옵
+so101-help            # 이 요약
+```
+
+```yaml
+# docker-compose.so101.yml
+services:
+  vscode-tunnel:
+    device_cgroup_rules:
+      - "c 166:* rmw"
+      - "c 81:* rmw"
+    environment:
+      - SO101_FOLLOWER_SERIAL=${SO101_FOLLOWER_SERIAL}
+      - SO101_LEADER_SERIAL=${SO101_LEADER_SERIAL}
+      - SO101_CAM_WRIST_USB=${SO101_CAM_WRIST_USB:-}
+      - SO101_CAM_OVERVIEW_USB=${SO101_CAM_OVERVIEW_USB:-}
+      - FOLLOWER_PORT=/dev/so101_follower
+      - LEADER_PORT=/dev/so101_leader
+      - HF_LEROBOT_CALIBRATION=/root/so-arm101/calibration
+    volumes:
+      - ./so101-attach.sh:/usr/local/bin/so101-attach:ro
+      - ~/Documents/so-arm101/calibration:/root/so-arm101/calibration
+```
+
+**1. 보드 시리얼 번호 확인** (호스트, 팔 2대 USB 연결 후):
+
+```bash
+ls -l /dev/serial/by-id/
+# usb-1a86_USB_Single_Serial_XXXXXXXXXX-if00 -> ../../ttyACM0
+# usb-1a86_USB_Single_Serial_YYYYYYYYYY-if00 -> ../../ttyACM1
+```
+
+`Serial_` 뒤의 10자리가 시리얼 번호입니다. 어느 쪽이 follower 인지는 한쪽 USB 를
+뽑고 다시 실행해 사라지는 항목으로 판별합니다 (조립 가이드 4.1절).
+
+**2. `.env` 설정** (따옴표 없이):
+
+```env
+SO101_FOLLOWER_SERIAL=XXXXXXXXXX
+SO101_LEADER_SERIAL=YYYYYYYYYY
+```
+
+**3. 적용** (팔이 꽂혀 있지 않아도 됨):
+
+```bash
+# .env 변경으로 컨테이너가 1회 재생성됨 (터널이 잠시 끊김)
+./start.sh
+
+# 확인
+docker inspect vscode-tunnel --format '{{.HostConfig.DeviceCgroupRules}}'   # [c 166:* rmw]
+docker exec vscode-tunnel printenv FOLLOWER_PORT LEADER_PORT HF_LEROBOT_CALIBRATION
+docker exec vscode-tunnel ls /root/so-arm101/calibration/robots/so_follower
+```
+
+**4. lerobot 설치** (컨테이너 안, 최초 1회):
+
+lerobot 은 numpy 2.x 를 요구하는데 이미지의 시스템 Python 은 소스 빌드 OpenCV 가
+numpy 1.26 에 링크되어 있어, 시스템에 설치하면 `cv2` 가 깨집니다. `/workspace/venvs`
+아래 별도 venv 에 설치합니다. `/workspace` 는 bind mount 라 컨테이너 recreate 후에도
+남습니다. 버전은 호스트 `~/lerobot` 체크아웃과 같은 커밋으로 고정합니다 (torch 포함
+수 GB 를 받으므로 시간이 걸립니다). venv 생성에 필요한 `python3-venv` 와 torchcodec 이
+요구하는 FFmpeg 런타임 `libavdevice60` / `libavfilter9` 는 이미지에 들어 있습니다.
+
+```bash
+python3 -m venv /workspace/venvs/lerobot
+/workspace/venvs/lerobot/bin/pip install \
+    "lerobot[core_scripts,feetech] @ git+https://github.com/huggingface/lerobot.git@b6ec0060779550c0a157ae34feb89e0cf86012a8"
+
+# 확인
+source /workspace/venvs/lerobot/bin/activate
+python -c "import torch; print(torch.__version__, torch.cuda.is_available())"
+lerobot-teleoperate --help
+```
+
+VS Code 터미널은 venv 를 자동 활성화하지 않습니다. 세션마다 `acl`(이미지의
+`/root/.bashrc` 에 정의된 alias, `source /workspace/venvs/lerobot/bin/activate` 와
+같음)을 실행하거나, Python 확장의 인터프리터 선택에서
+`/workspace/venvs/lerobot/bin/python` 을 지정해 새 터미널이 자동 활성화되게 합니다.
+
+**5. 사용 절차** (매번):
+
+```bash
+# 1) 호스트: 팔 2대의 USB 와 DC 전원 연결 (USB 만으로는 서보에 전원이 가지 않음, 조립 가이드 2.3절)
+
+# 2) 컨테이너 터미널: 노드 생성 (호스트에서는 docker exec vscode-tunnel so101-attach)
+so101-attach
+# [so101-attach] /dev/so101_follower -> ttyACM0 (166:0)
+# [so101-attach] /dev/so101_leader -> ttyACM1 (166:1)
+# [so101-attach] /dev/so101_cam_wrist -> video2 (81:2)       <- 6번에서 카메라를 설정한 경우
+# [so101-attach] /dev/so101_cam_overview -> video0 (81:0)
+
+# 3) 텔레옵: acl 로 venv 를 켠 뒤 alias 실행 (포트와 캘리브레이션 위치는 환경변수로 이미 잡혀 있음)
+acl
+so101-teleop
+```
+
+`so101-teleop` 은 이미지의 `/root/.bashrc` 에 정의된 alias 로, 다음 명령과 같습니다
+(`id` 는 캘리브레이션 파일명과 같아야 합니다).
+
+```bash
+lerobot-teleoperate \
+    --robot.type=so101_follower \
+    --robot.port=$FOLLOWER_PORT \
+    --robot.id=so101_follower_01 \
+    --teleop.type=so101_leader \
+    --teleop.port=$LEADER_PORT \
+    --teleop.id=so101_leader_01
+```
+
+**6. 카메라** (손목 카메라 + 전체 뷰 카메라, 선택):
+
+카메라도 같은 attach 방식으로 넘깁니다. 웹캠은 USB 시리얼이 고유하지 않은 경우가 많아
+USB 인터페이스 경로로 식별하므로, 카메라는 항상 같은 USB 포트에 꽂습니다. UVC 카메라는
+노드가 2개(캡처 + 메타데이터) 생기는데 캡처 노드만 잡습니다.
+
+```bash
+# 값 확인 (컨테이너 안, 카메라 연결 후). usb= 값을 .env 에 적는다
+so101-attach list
+# cameras, capture nodes only (value for SO101_CAM_WRIST_USB / SO101_CAM_OVERVIEW_USB):
+#   video0 usb=1-2.2:1.0 name="3D Global Shutter Camera: 3D Gl"
+#   video2 usb=1-7.1:1.0 name="USB Camera: USB Camera"
+```
+
+```env
+SO101_CAM_WRIST_USB=1-7.1:1.0
+SO101_CAM_OVERVIEW_USB=1-2.2:1.0
+```
+
+```bash
+./start.sh          # .env 변경으로 컨테이너 1회 재생성
+so101-attach        # 이후 카메라 노드 2줄이 추가로 출력됨
+```
+
+lerobot 명령에는 노드 경로를 그대로 넣습니다. 요청한 fps 와 크기는 카메라가 지원하는
+값과 정확히 같아야 하며(lerobot 이 실제 값과 대조한 뒤 예외), 지원 값은 호스트에서
+`v4l2-ctl -d /dev/videoN --list-formats-ext` 로 확인합니다. 아래는 이 저장소 작성
+환경의 값입니다. 손목(Realtek USB Camera)은 MJPG 640x480 @ 30fps, 전체 뷰(ELP
+스테레오)는 좌우 병치 MJPG 1280x480 @ 60fps 이며 ELP 는 30fps 를 지원하지 않습니다.
+
+```bash
+lerobot-record \
+    --robot.type=so101_follower \
+    --robot.port=$FOLLOWER_PORT \
+    --robot.id=so101_follower_01 \
+    --robot.cameras="{ wrist: {type: opencv, index_or_path: /dev/so101_cam_wrist, width: 640, height: 480, fps: 30, fourcc: MJPG}, overview: {type: opencv, index_or_path: /dev/so101_cam_overview, width: 1280, height: 480, fps: 60, fourcc: MJPG} }" \
+    --teleop.type=so101_leader \
+    --teleop.port=$LEADER_PORT \
+    --teleop.id=so101_leader_01 \
+    --dataset.repo_id=<hf_user>/<dataset_name> \
+    --dataset.single_task="<task description>" \
+    --dataset.fps=30 \
+    --dataset.num_episodes=5 \
+    --dataset.push_to_hub=false
+```
+
+`--dataset.push_to_hub` 의 기본값은 `true` 라 Hub 업로드를 원치 않으면 명시적으로
+끕니다. 데이터셋 기본 저장 위치는 `$HF_HOME/lerobot`(hf-cache 볼륨 안)이며 위치 결정은
+이 오버라이드 범위 밖입니다.
+
+> ELP 는 기존 카메라 오버레이(`/dev/video0`, `/dev/video1`)와 `/dev/so101_cam_overview`
+> 두 이름으로 보입니다. 같은 장치를 두 프로세스가 동시에 열지 마세요.
+
+> `so101-attach` 가 `not found` 를 내면 그 장치의 USB 가 안 꽂힌 것입니다. 찾은 장치의
+> 노드는 만들어지므로 follower 만 꽂은 상태에서는 follower 노드만 생기고 종료 코드는
+> 1 입니다. 장치를 뽑은 뒤에는 노드가 남아 있지만 열면 실패하며, 다음 `so101-attach` 가
+> 정리합니다.
+
+> 호스트 conda 환경의 lerobot 과 컨테이너의 lerobot 을 같은 포트에 동시에 붙이지
+> 마세요. 시리얼 포트는 배타 잠금이 없어 패킷이 섞입니다.
+
+> 컨테이너 안에서 `lerobot-calibrate` 로 캘리브레이션을 새로 쓰면 호스트 파일이
+> root 소유가 됩니다. 필요 시 `sudo chown -R $USER ~/Documents/so-arm101/calibration`.
+> 조립 가이드 6.4절의 `Homing_Offset` 복구 스니펫을 컨테이너에서 쓸 때는 포트
+> 문자열에 `/dev/ttyACM1` 대신 `/dev/so101_follower` 등 컨테이너 노드 경로를 넣습니다.
+
+> `lerobot-record` 의 키보드 조작은 컨테이너에 `DISPLAY` 가 없어 pynput 대신 stdin
+> 으로 동작합니다. VS Code 터미널이나 `docker exec -it` 처럼 TTY 가 있어야 하며,
+> 백그라운드 실행에서는 키 입력을 받지 못합니다. 기록되는 데이터셋의 기본 위치는
+> `$HF_HOME/lerobot`(hf-cache 볼륨 안)이며 위치 결정은 이 오버라이드 범위 밖입니다.
+
+> 변수가 없는 호스트(Mac 등)에서는 오버레이가 적용되지 않아 기존 동작과 동일합니다.
+
+---
+
 ## ROS2 Jazzy (우분투 PC 전용)
 
 베이스 이미지가 Ubuntu 24.04 (noble)이므로, noble 공식 바이너리가 제공되는 **ROS2
@@ -330,6 +550,7 @@ docker exec vscode-tunnel bash -lc 'source /opt/ros/jazzy/setup.bash && ros2 --v
 | 베이스 이미지 | `.env`의 `BASE_IMAGE` | gitignored | `.env`에 값 설정 |
 | GPU | `docker-compose.gpu.yml` | commit | `nvidia-smi` 동작 |
 | USB 카메라 | `docker-compose.camera.yml` | commit | `/dev/video0` 존재 |
+| SO-ARM101 서보 보드 | `docker-compose.so101.yml` + `so101-attach.sh` + `.env`의 `SO101_FOLLOWER_SERIAL` / `SO101_LEADER_SERIAL` | commit (파일) / gitignored (값) | `.env`에 두 변수 설정. 노드는 팔을 꽂은 뒤 `so101-attach` 로 생성 |
 | 머신별 마운트 | `docker-compose.local.yml` | gitignored | 파일 존재 |
 | HF 캐시 위치 | `docker-compose.local.yml` + `.env`의 `HF_CACHE_PATH` | gitignored | `.env`에 `HF_CACHE_PATH` 설정 (미설정 시 named volume `hf-cache` 사용) |
 | Multi-host 사이드카 | `docker-compose.tailscale.yml` + `.env`의 `TAILSCALE_IP` | commit (파일) / gitignored (값) | `.env`에 `TAILSCALE_IP` 설정 |
@@ -562,6 +783,8 @@ docker exec vscode-tunnel code tunnel restart
 ├── docker-compose.yml            # 컨테이너 실행 설정 (build args에 BASE_IMAGE 주입)
 ├── docker-compose.gpu.yml        # NVIDIA GPU 오버라이드 (start.sh 자동 적용)
 ├── docker-compose.camera.yml     # ELP USB 스테레오 카메라 패스스루 (/dev/video0 시 자동 적용)
+├── docker-compose.so101.yml      # SO-ARM101 서보 보드 패스스루 (.env SO101_*_SERIAL 설정 시 자동 적용)
+├── so101-attach.sh               # 컨테이너 안에서 sysfs 시리얼 매칭으로 /dev/so101_* 노드 생성 (bind mount)
 ├── docker-compose.tailscale.yml  # study-timer-http 사이드카 (TAILSCALE_IP 시 자동 적용)
 ├── docker-compose.local.yml      # 머신별 마운트 등 로컬 오버라이드 (gitignored)
 ├── study-timer-nginx.conf        # 사이드카 nginx 설정 (autoindex JSON, no-cache)

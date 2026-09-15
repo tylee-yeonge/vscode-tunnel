@@ -1,5 +1,97 @@
 # Changelog
 
+## v1.15.0 (2026-09-15)
+
+### Added
+- SO-ARM101(LeRobot) leader/follower 서보 보드 패스스루용 `docker-compose.so101.yml` 오버라이드 추가
+  - 팔은 평소에 빼두고 쓸 때만 꽂는 운용이라, 컨테이너 생성 시점에 노드를 고정하는
+    `devices` 매핑 대신 `device_cgroup_rules: "c 166:* rmw"` 로 ttyACM(major 166)
+    접근 권한만 열어 둠. 컨테이너 생성 시 팔이 꽂혀 있을 필요가 없음
+  - `so101-attach.sh` 추가: 컨테이너 안에서 실행하면 호스트와 공유되는 sysfs 에서
+    USB 시리얼 번호(`.env` 의 `SO101_FOLLOWER_SERIAL` / `SO101_LEADER_SERIAL`)로
+    보드를 찾아 `/dev/so101_follower` / `/dev/so101_leader` 를 `mknod` 로 생성.
+    다시 꽂아 `ttyACM` 번호가 바뀌어도 재실행으로 갈아 끼움. 리포 파일을
+    `/usr/local/bin/so101-attach` 로 bind mount (tailscale 오버레이의 nginx conf 와 같은 방식)
+  - lerobot CLI 용 `FOLLOWER_PORT` / `LEADER_PORT` 와 캘리브레이션 위치
+    `HF_LEROBOT_CALIBRATION=/root/so-arm101/calibration` 을 컨테이너 환경변수로 고정
+  - 호스트 `~/Documents/so-arm101/calibration` 을 bind mount 해 호스트에서 만든
+    캘리브레이션 JSON(`robots/so_follower`, `teleoperators/so_leader`)을 공유
+  - 카메라 패스스루: `device_cgroup_rules` 에 `c 81:* rmw` 추가. `so101-attach` 가 `.env` 의
+    `SO101_CAM_WRIST_USB` / `SO101_CAM_OVERVIEW_USB`(USB 인터페이스 경로, 예 `1-7.1:1.0`)로
+    sysfs 의 캡처 노드(index 0)를 찾아 `/dev/so101_cam_wrist` / `/dev/so101_cam_overview` 를
+    생성(선택, 비어 있으면 건너뜀). 웹캠은 시리얼이 고유하지 않은 경우가 많아 포트 경로로 식별
+  - `so101-attach list`: 보드(시리얼)와 카메라(USB 경로, 이름)를 `.env` 에 적을 값으로 출력.
+    `lerobot-find-port` / `lerobot-find-cameras` 는 `/dev/ttyACM*`, `/dev/video*` glob 이라
+    컨테이너의 고정 이름 노드를 보지 못하는 것을 대신함
+- `Dockerfile` 말미에 SO-ARM101 지원 블록 추가 (상위 레이어 캐시 무효화 없음)
+  - `python3-venv`: `/workspace/venvs/lerobot` venv 생성용. 없으면 `python3 -m venv` 가
+    ensurepip 부재로 실패
+  - `libavdevice60` / `libavfilter9`: torchcodec 의 FFmpeg 6 코어 로드에 필요. OpenCV 빌드
+    의존성에는 libavcodec/libavformat/libswscale 만 있어 빠져 있었고, 없으면 lerobot 이 느린
+    pyav 디코더로 폴백했음
+  - `/root/.bashrc` alias `acl`(venv 활성화, 호스트 bashrc 의 `acl` 과 같은 이름) /
+    `so101-teleop`(조립 가이드 7절 텔레옵 명령) / `so101-help`(명령 요약 출력, README 빠른 참조와
+    동일). venv 는 이미지 밖이라 정의만 이미지에 둠
+
+### Changed
+- `start.sh` / `reload.sh` 양쪽에 SO-ARM101 감지 로직 추가
+  - `.env` 의 `SO101_FOLLOWER_SERIAL=` / `SO101_LEADER_SERIAL=` 활성 라인이 모두 있으면
+    `-f docker-compose.so101.yml` 을 누적 (`TAILSCALE_IP` 와 같은 grep 패턴). 노드 존재는 보지 않음
+- `.env.sample` 에 보드 시리얼 2개와 카메라 USB 경로 2개 변수 주석 안내 추가
+- `README.md` 에 "SO-ARM101 서보 보드 (LeRobot)" 섹션 추가(설치, alias, 사용 절차, 카메라,
+  lerobot 카메라 설정 예시), 포함 구성 표 / 환경변수 표 / 감지 조건 표 / 머신별 오버라이드 표 /
+  파일 구성 갱신
+- `UBUNTU_SETUP.md` 3-2 `.env` 예시와 3-6 감지 목록에 반영, 3-8 절 추가
+
+### Fixed
+- 컨테이너 recreate 마다 VS Code tunnel 이 GitHub device 로그인을 다시 요구하던 문제
+  (`docker-compose.yml` 에 `hostname: vscode-tunnel` 고정)
+  - `vscode-cli-data` 볼륨의 `/root/.vscode/cli/token.json` 은 recreate 후에도 남아 있었지만
+    새 컨테이너의 CLI 가 이를 쓰지 않고 device 코드를 다시 발급했음
+  - VS Code CLI(1.137.0)는 keyring 이 없는 환경에서 파일 저장 토큰을 암호화하며(`token.json`
+    내용이 JSON 객체가 아닌 문자열 1개), 그 키가 hostname 에 묶여 있음. hostname 미설정 시
+    docker 가 컨테이너 ID 를 hostname 으로 주어 recreate 마다 바뀌므로 토큰을 복호화하지 못했음.
+    `/etc/machine-id` 는 recreate 전후 동일했으므로 키 원천이 아님
+  - hostname 고정 후 로그인 1회 -> `./reload.sh` 로 완전히 새 컨테이너를 만든 뒤에도 device
+    코드 없이 바로 `Connected` 되는 것을 확인
+  - 터널 이름은 `--name ${TUNNEL_NAME}` 으로 따로 주고, 리포·study-timer·Claude Code 설정·
+    VS Code server 데이터 어디에도 hostname 의존이 없어 부작용은 프롬프트 표시(`root@vscode-tunnel`)와
+    `HOSTNAME` 환경변수 변경뿐
+
+### Notes
+- lerobot 은 이미지에 넣지 않고 컨테이너 안 `/workspace/venvs/lerobot` venv 에 설치
+  (README 절차, 호스트 `~/lerobot` 과 같은 커밋으로 핀). 이미지의 시스템 Python 은
+  소스 빌드 OpenCV 가 numpy 1.26 에 링크되어 있어 numpy 2.x 를 요구하는 lerobot 을
+  시스템에 설치하면 `cv2` 가 깨짐. venv 생성에 필요한 `python3-venv` 와 torchcodec 런타임은
+  이미지에 포함
+- `.env` 는 `env_file` 로 컨테이너에 주입되므로 변수(보드 시리얼, 카메라 경로) 추가·변경만으로
+  다음 `./start.sh` 에서 컨테이너가 1회 재생성됨 (터널 잠시 단절). 이후 장치를 꽂고 뽑는
+  동작에서는 재생성 없음
+- 카메라는 USB 포트 경로로 식별하므로 항상 같은 포트에 꽂을 것. ELP 스테레오는 기존 카메라
+  오버레이의 `/dev/video0` / `/dev/video1` 과 `/dev/so101_cam_overview` 두 이름으로 보이며
+  같은 장치를 동시에 두 번 열지 않아야 함
+- lerobot 카메라 설정은 카메라가 지원하는 fps / 크기와 정확히 일치해야 함 (lerobot 이 대조 후
+  예외). 작성 환경: 손목 Realtek USB Camera MJPG 640x480 @ 30fps, 전체 뷰 ELP 스테레오
+  MJPG 1280x480 @ 60fps (ELP 는 30fps 미지원)
+- `so101-attach` 는 자동 실행되지 않음. 팔을 꽂은 뒤 컨테이너 터미널에서 실행
+  (`docker exec vscode-tunnel so101-attach` 도 가능). 컨테이너 프로세스가 root 라
+  `group_add: dialout` 은 두지 않음
+- Linux 전용. Mac(Docker Desktop) 은 USB 시리얼 패스스루 미지원. 변수 미설정 시
+  오버레이가 적용되지 않아 기존 동작과 동일
+- `lerobot-record` 데이터셋 저장 위치(기본 `$HF_HOME/lerobot`, hf-cache 볼륨 안)는 이번 범위 밖
+
+### Migration
+- 기존 사용자: `hostname` 고정으로 첫 재기동 뒤 GitHub device 로그인이 1회 필요함(이전 hostname 으로
+  암호화된 토큰은 못 씀). 그 이후 recreate 에서는 재로그인 불필요
+- 기존 사용자: 이미지 재빌드(말미 레이어) + `.env` 에 변수 추가 후 재기동, 장치를 꽂고 attach
+  ```bash
+  ls -l /dev/serial/by-id/                    # 보드: Serial_ 뒤 10자리 -> SO101_*_SERIAL
+  docker exec vscode-tunnel so101-attach list # 카메라: usb= 값 -> SO101_CAM_*_USB (선택)
+  ./start.sh
+  docker exec vscode-tunnel so101-attach
+  docker exec vscode-tunnel ls -l /dev/so101_follower /dev/so101_leader /dev/so101_cam_wrist /dev/so101_cam_overview
+  ```
+
 ## v1.14.2 (2026-09-15)
 
 ### Fixed
