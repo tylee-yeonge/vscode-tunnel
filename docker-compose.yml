@@ -19,6 +19,11 @@ services:
       # 타임존: Node 등 TZ 환경변수를 따르는 프로세스용. /etc/localtime은
       # Dockerfile에서 같은 값으로 영구 고정되어 있으므로 둘이 일치.
       - TZ=${TZ:-Asia/Seoul}
+      # Claude Code 설정 디렉터리. 기본값과 같은 경로지만 명시하면 .claude.json
+      # (온보딩/프로젝트 신뢰 상태/계정 정보)도 이 디렉터리 안에 저장되어 아래
+      # claude-config named volume 에 함께 남는다. 미설정 시 /root/.claude.json 은
+      # writable layer 에 있어 컨테이너 recreate 마다 소실된다.
+      - CLAUDE_CONFIG_DIR=/root/.claude
       # HTTPS 방식 사용 시 GitHub Personal Access Token
       # - GIT_TOKEN=ghp_xxxxxxxxxxxx
     healthcheck:
@@ -46,8 +51,17 @@ services:
       # VS Code 원격 서버/익스텐션 데이터 유지 (재시작 시 재설치 방지)
       - vscode-server-data:/root/.vscode-server
 
-      # Claude Code 인증 정보 공유 (호스트에서 로그인한 세션 재활용)
-      - ~/.claude:/root/.claude
+      # Claude Code 설정/인증 (컨테이너 전용 named volume).
+      # 호스트 ~/.claude 를 그대로 공유하면 컨테이너(root)가 토큰을 갱신할 때
+      # .credentials.json 을 root 소유 새 파일로 교체해, Linux 호스트의 Claude
+      # Code 가 읽지 못하고(EACCES 를 "자격증명 없음"으로 처리) 로그아웃 상태로
+      # 빠진다. 인증은 컨테이너에서 한 번 별도로 로그인한다 (README 참조).
+      - claude-config:/root/.claude
+
+      # 호스트 Claude Code 설정 원본 (읽기 전용). entrypoint 가 CLAUDE.md,
+      # settings.json, rules/ 만 /root/.claude 로 복사한다 (호스트 -> 컨테이너
+      # 단방향, 컨테이너 시작 시점 스냅샷). 인증 파일은 복사하지 않는다.
+      - ~/.claude:/root/.claude-host:ro
 
       # Study Timer 일별 JSON 저장소 (nanobot-docker가 external volume으로 공유)
       - study-timer-data:/root/.study-timer
@@ -68,3 +82,5 @@ volumes:
     name: study-timer-data
   hf-cache:
     name: hf-cache
+  claude-config:
+    name: claude-config

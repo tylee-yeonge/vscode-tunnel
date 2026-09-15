@@ -60,6 +60,26 @@ setup_ssh() {
     echo "[entrypoint] SSH 키 복사 및 권한 보정 완료"
 }
 
+# 호스트 ~/.claude 를 /root/.claude-host 로 읽기 전용 마운트하고, 공유할 설정
+# 파일만 컨테이너 전용 설정 디렉터리(/root/.claude, named volume)로 복사한다.
+# 인증 파일(.credentials.json)은 복사하지 않는다. 호스트와 컨테이너가 같은
+# 인증 파일을 쓰면 컨테이너(root)가 갱신한 파일을 Linux 호스트가 읽지 못해
+# 호스트 Claude Code 가 로그아웃되므로, 인증은 컨테이너에서 별도로 로그인한다.
+# 복사는 호스트 -> 컨테이너 단방향이며 컨테이너 시작 시점의 스냅샷이다.
+setup_claude_config() {
+    [ -d /root/.claude-host ] || return 0
+    mkdir -p /root/.claude
+    for f in CLAUDE.md settings.json; do
+        [ -f "/root/.claude-host/$f" ] || continue
+        cp -f "/root/.claude-host/$f" "/root/.claude/$f"
+    done
+    if [ -d /root/.claude-host/rules ]; then
+        rm -rf /root/.claude/rules
+        cp -r /root/.claude-host/rules /root/.claude/rules
+    fi
+    echo "[entrypoint] Claude Code 공유 설정 복사 완료 (CLAUDE.md, settings.json, rules/)"
+}
+
 # extensions.json 레지스트리에 study-timer 엔트리를 idempotent하게 upsert
 # VS Code remote agent는 디렉토리만으로는 활성화하지 않고 이 레지스트리에
 # 등록된 항목만 활성화하므로, 매 컨테이너 시작마다 등록을 보장한다.
@@ -242,6 +262,9 @@ refresh_vscode_cli
 
 # SSH 키 권한 보정 (tunnel 시작 전)
 setup_ssh
+
+# Claude Code 공유 설정 복사 (tunnel 시작 전)
+setup_claude_config
 
 # Study Timer extension 배치 (tunnel 시작 전)
 deploy_study_timer
