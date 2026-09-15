@@ -189,6 +189,44 @@ RUN apt-get update && apt-get install -y --no-install-recommends tzdata \
 # ========================================
 ENV HF_HOME=/root/.cache/huggingface
 
+# ========================================
+# SO-ARM101 (LeRobot) 지원
+# - python3-venv: /workspace/venvs/lerobot venv 생성용. 없으면 python3 -m venv 가 ensurepip
+#   부재로 실패한다 (venv 자체는 bind mount 된 /workspace 에 남아 이미지 밖에서 유지)
+# - libavdevice60 / libavfilter9: torchcodec 이 FFmpeg 6 코어 라이브러리를 로드할 때 요구하는
+#   런타임. OpenCV 빌드 의존성으로 libavcodec/libavformat/libswscale 만 들어 있어 이 둘이
+#   빠져 있었고, 없으면 lerobot 이 느린 pyav 디코더로 폴백한다
+# - alias: venv 는 이미지 밖이므로 정의만 이미지에 둔다
+#   acl         : venv 활성화 (호스트 bashrc 의 alias acl="conda activate lerobot" 과 같은 이름)
+#   so101-teleop: 조립 가이드 7절 텔레옵. 포트는 docker-compose.so101.yml 의 환경변수,
+#                 id 는 캘리브레이션 파일명(so101_follower_01 / so101_leader_01)과 같아야 한다
+#   so101-help  : 위 명령 요약 출력 (셸 함수, README "SO-ARM101 서보 보드" 절의 빠른 참조와 동일)
+# 캐시 무효화 영향 최소화를 위해 이미지 말미에 배치. Mac 에서는 alias 가 정의만 되고 쓰이지 않는다.
+# ========================================
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        python3-venv \
+        libavdevice60 \
+        libavfilter9 \
+    && rm -rf /var/lib/apt/lists/*
+RUN cat >> /root/.bashrc <<'EOF'
+
+# SO-ARM101 (LeRobot) 편의 alias (Dockerfile 에서 추가)
+alias acl='source /workspace/venvs/lerobot/bin/activate'
+alias so101-teleop='lerobot-teleoperate --robot.type=so101_follower --robot.port=$FOLLOWER_PORT --robot.id=so101_follower_01 --teleop.type=so101_leader --teleop.port=$LEADER_PORT --teleop.id=so101_leader_01'
+so101-help() {
+    cat <<'HELP'
+SO-ARM101 (LeRobot) quick reference
+  so101-attach          # 팔과 카메라를 꽂은 뒤 매번. /dev/so101_follower, so101_leader, so101_cam_wrist, so101_cam_overview 생성
+  so101-attach list     # 보드 시리얼 / 카메라 USB 경로 조회 (.env 의 SO101_* 값)
+  acl                   # lerobot venv 활성화 (/workspace/venvs/lerobot)
+  so101-teleop          # 조립 가이드 7절 텔레옵 (acl 뒤에 실행)
+  so101-help            # 이 도움말
+  포트: FOLLOWER_PORT / LEADER_PORT, 캘리브레이션: HF_LEROBOT_CALIBRATION (printenv 로 확인)
+  문서: README.md "SO-ARM101 서보 보드 (LeRobot)" 절
+HELP
+}
+EOF
+
 WORKDIR /workspace
 
 # ========================================
