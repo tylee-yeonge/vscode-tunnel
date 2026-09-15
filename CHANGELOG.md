@@ -34,6 +34,14 @@
     동일). venv 는 이미지 밖이라 정의만 이미지에 둠
 
 ### Changed
+- watchdog 가 릴레이 단절 후 미복구 상태를 감지해 터널을 재시작 (`entrypoint.sh`)
+  - 네트워크 단절로 릴레이 연결이 끊기면 CLI 는 재시도 루프에 들어가는데, 복구에 실패한 채로도
+    `code tunnel status` 는 stale `Connected` 를 반환함
+  - 터널 로그의 마지막 단절 마커(`Tunnel exited unexpectedly` / `Error refreshing access token,
+    will retry`) 이후 회복 흔적(`Opened new client` / `session is running` / `Forwarding port` /
+    `Found running server`)이 없이 `RECONNECT_GRACE`(300초) 이상 지나면 비정상으로 판정
+  - CLI 가 조용히 복구했지만 클라이언트 활동이 없어 흔적이 안 남은 경우도 재시작되지만(오탐),
+    유휴 터널 재시작 비용은 수 초라 감수. 재시작 시 로그를 비우므로 반복되지 않음
 - `start.sh` / `reload.sh` 양쪽에 SO-ARM101 감지 로직 추가
   - `.env` 의 `SO101_FOLLOWER_SERIAL=` / `SO101_LEADER_SERIAL=` 활성 라인이 모두 있으면
     `-f docker-compose.so101.yml` 을 누적 (`TAILSCALE_IP` 와 같은 grep 패턴). 노드 존재는 보지 않음

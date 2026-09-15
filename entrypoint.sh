@@ -9,7 +9,8 @@ TUNNEL_NAME="${TUNNEL_NAME:-my-vscode-tunnel}"
 CHECK_INTERVAL=120   # 상태 확인 주기 (초)
 MAX_RETRIES=3        # 연속 복구 실패 허용 횟수
 STARTUP_GRACE=300    # 초기 시작 후 헬스체크 면제 시간 (초, 인증 대기 고려)
-TUNNEL_LOG=/tmp/tunnel.log   # code tunnel CLI 출력 로그 (토큰 만료 감지용)
+RECONNECT_GRACE=300  # 릴레이 단절 마커 후 CLI 자가 복구 대기 시간 (초)
+TUNNEL_LOG=/tmp/tunnel.log   # code tunnel CLI 출력 로그 (토큰 만료/단절 미복구 감지용)
 
 retry_count=0
 start_time=0
@@ -243,6 +244,26 @@ except:
     if [ "$TUNNEL_STATE" != "Connected" ]; then
         echo "[watchdog] 터널 상태 비정상: ${TUNNEL_STATE}"
         return 1
+    fi
+
+    # 4) 릴레이 단절 후 미복구 감지 (로그 기반)
+    # 네트워크 단절로 릴레이 연결이 끊기면 CLI는 재시도 루프에 들어가는데,
+    # 복구에 실패한 채로도 code tunnel status는 stale "Connected"를 반환한다.
+    # 마지막 단절 마커 이후 회복 흔적(클라이언트 접속/포트 포워딩)이 없이
+    # RECONNECT_GRACE 이상 지나면 실패로 판정한다. CLI가 조용히 복구했지만
+    # 클라이언트 활동이 없어 흔적이 안 남은 경우도 재시작되지만(오탐),
+    # 유휴 터널 재시작 비용은 수 초라 감수한다. start_tunnel이 로그를 비우므로
+    # 재시작이 반복되지는 않는다. 로그 timestamp는 UTC.
+    last_disc=$(grep -nE "Tunnel exited unexpectedly|Error refreshing access token, will retry" "$TUNNEL_LOG" 2>/dev/null | tail -1 | cut -d: -f1)
+    if [ -n "$last_disc" ] && \
+       ! tail -n "+$((last_disc + 1))" "$TUNNEL_LOG" | grep -qE "Opened new client|session is running|Forwarding port|Found running server"; then
+        disc_ts=$(sed -n "${last_disc}p" "$TUNNEL_LOG" | sed -nE 's/^\[([0-9]{4}-[0-9]{2}-[0-9]{2} [0-9:]{8})\].*/\1/p')
+        disc_epoch=""
+        [ -n "$disc_ts" ] && disc_epoch=$(date -u -d "$disc_ts" +%s 2>/dev/null)
+        if [ -n "$disc_epoch" ] && [ $(($(date +%s) - disc_epoch)) -ge "$RECONNECT_GRACE" ]; then
+            echo "[watchdog] 릴레이 단절 후 회복 흔적 없음 (단절 ${disc_ts} UTC, ${RECONNECT_GRACE}초 초과)"
+            return 1
+        fi
     fi
 
     return 0

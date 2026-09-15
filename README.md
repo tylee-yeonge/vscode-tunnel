@@ -732,6 +732,7 @@ vscode-tunnel 컨테이너를 먼저 기동해 볼륨이 생성된 이후에 nan
 | 프로세스 생존 | 터널 프로세스가 살아있는지 확인 |
 | 프로세스 중복 | `code tunnel` 프로세스가 2개 이상이면 비정상 |
 | 터널 상태 | `code tunnel status`의 상태가 `Connected`인지 확인 |
+| 릴레이 단절 미복구 | 터널 로그의 마지막 단절 마커(`Tunnel exited unexpectedly` / `Error refreshing access token, will retry`) 이후 회복 흔적 없이 300초(`RECONNECT_GRACE`) 이상 지나면 비정상. `status`가 stale `Connected`를 반환하는 경우를 보완 (v1.15.0) |
 
 - 비정상 감지 시 터널을 자동 재시작합니다.
 - 3회 연속 복구 실패 시 컨테이너를 종료하고, Docker의 `restart: unless-stopped` 정책으로 컨테이너 자체가 재시작됩니다.
