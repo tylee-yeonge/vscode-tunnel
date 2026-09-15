@@ -1,0 +1,39 @@
+services:
+  vscode-tunnel:
+    # SO-ARM101 (LeRobot) leader/follower 서보 보드와 카메라 패스스루.
+    # 보드는 Waveshare Bus Servo Adapter(CH343 USB-Serial, 1a86:55d3)로, 호스트에서
+    # cdc_acm 이 /dev/ttyACM* (major 166) 로 잡는다. 카메라는 UVC 로 /dev/video* (major 81).
+    # 팔은 평소에 빼두고 쓸 때만 꽂으므로 컨테이너 생성 시점에 노드를 고정하는 devices: 매핑은
+    # 쓸 수 없다. 대신
+    #   1) 여기서 major 166 / 81 전체에 cgroup 접근 권한만 열어 두고,
+    #   2) 장치를 꽂은 뒤 컨테이너 안에서 so101-attach 를 실행해, 호스트와 공유되는
+    #      sysfs(핫플러그 실시간 반영)에서 보드는 USB 시리얼 번호로, 카메라는 USB 인터페이스
+    #      경로로 찾아 mknod 로 고정 이름의 노드를 만든다.
+    # mknod 에 필요한 CAP_MKNOD 는 Docker 기본 capability 에 포함된다.
+    # 노드는 root:root 로 생성되고 컨테이너 프로세스가 root 라 group_add 불필요.
+    device_cgroup_rules:
+      - "c 166:* rmw"
+      - "c 81:* rmw"
+    environment:
+      # so101-attach 가 sysfs 에서 찾을 서보 보드 USB 시리얼 번호 (.env, 머신 고유 값)
+      - SO101_FOLLOWER_SERIAL=${SO101_FOLLOWER_SERIAL}
+      - SO101_LEADER_SERIAL=${SO101_LEADER_SERIAL}
+      # 카메라 USB 인터페이스 경로 (예: 1-7.1:1.0). `so101-attach list` 로 확인.
+      # 비어 있으면 그 카메라는 건너뛴다 (카메라는 선택).
+      - SO101_CAM_WRIST_USB=${SO101_CAM_WRIST_USB:-}
+      - SO101_CAM_OVERVIEW_USB=${SO101_CAM_OVERVIEW_USB:-}
+      # so101-attach 가 만드는 보드 노드 경로. lerobot CLI 의 --robot.port / --teleop.port 에 넣는다.
+      # 변수명은 조립 가이드 4.1절(호스트 bashrc)과 같게 맞춰 같은 명령을 그대로 쓴다.
+      # 카메라 노드는 /dev/so101_cam_wrist, /dev/so101_cam_overview 로 고정.
+      - FOLLOWER_PORT=/dev/so101_follower
+      - LEADER_PORT=/dev/so101_leader
+      # 캘리브레이션 JSON 위치. 미설정 시 lerobot 이 $HF_HOME/lerobot/calibration
+      # (hf-cache 볼륨 안)로 돌아가 파일이 두 벌로 갈라지므로 명시 고정한다.
+      - HF_LEROBOT_CALIBRATION=/root/so-arm101/calibration
+    volumes:
+      # 노드 생성 스크립트. 이미지에 넣지 않고 리포 파일을 바로 마운트한다
+      # (docker-compose.tailscale.yml 의 study-timer-nginx.conf 와 같은 방식).
+      - ./so101-attach.sh:/usr/local/bin/so101-attach:ro
+      # 호스트에서 만든 캘리브레이션 공유 (조립 가이드 6.3절 위치).
+      # 하위 구조 robots/so_follower/<id>.json, teleoperators/so_leader/<id>.json 그대로 사용.
+      - ~/Documents/so-arm101/calibration:/root/so-arm101/calibration
