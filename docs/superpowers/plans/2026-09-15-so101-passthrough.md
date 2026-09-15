@@ -791,12 +791,14 @@ docker exec vscode-tunnel so101-attach       # 출력의 ttyACMn / minor 가 새
 
 - [ ] **V7: Mac 회귀** — 회귀 (a). 이 머신에서는 실기 확인 불가. Task 2 Step 3 의 음성 테스트로 로직은 확인됨. Mac 에서 `./start.sh` 실행 시 `SO-ARM101` 라인이 출력되지 않는 것으로 확인
 
-- [ ] **V8: 태그 (사용자 지시 시 실행)** — Phase 1 V1-V6 과 Phase 2 V9-V13 통과 후
+- [x] **V8: 태그 (사용자 지시 시 실행)** — Phase 1 V1-V6 과 Phase 2 V9-V13 통과 후
 
 ```bash
 git tag v1.15.0
 git log --oneline -4
 ```
+
+진행 상황 (2026-09-16): 사용자 결정으로 V5(텔레옵), V6(재연결 복구), V7(Mac 회귀) 실기 검증 전에 태그를 생성했다. 세 항목은 이후 팔 옆에서 확인하는 항목으로 남긴다. 태그는 annotated(`v1.14.0` 과 같은 형식)로 만들어 `origin` 에 푸시. 같은 시점에 세션 시작 전부터 미커밋이던 `entrypoint.sh` 의 릴레이 단절 미복구 감지 변경도 사용자 지시로 별도 `feat:` 커밋(CHANGELOG v1.15.0 Changed 에 기재)으로 포함했다.
 
 ---
 
