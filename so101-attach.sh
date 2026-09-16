@@ -5,14 +5,16 @@
 # 대신 호스트와 공유되는 sysfs 에서 장치를 찾아 major:minor 를 읽고 mknod 로 고정 이름의
 # 노드를 만든다. 접근 권한은 docker-compose.so101.yml 의 device_cgroup_rules
 # (c 166:* 시리얼, c 81:* video4linux) 가 열어 둔다.
-#   - 서보 보드: USB 시리얼 번호로 식별 (CH343 은 고유 시리얼을 가진다)
+#   - 서보 보드: USB 시리얼 번호로 식별 (CH343 은 고유 시리얼을 가진다). 포트가 바뀌어도 된다.
 #       SO101_FOLLOWER_SERIAL -> /dev/so101_follower
 #       SO101_LEADER_SERIAL   -> /dev/so101_leader
-#   - 카메라: USB 인터페이스 경로(예: 1-7.1:1.0)로 식별. 웹캠은 시리얼이 고유하지 않은 경우가
-#     많아 "항상 같은 USB 포트에 꽂는다"를 전제로 한다. UVC 카메라는 노드가 2개(index 0 캡처,
-#     index 1 메타데이터) 생기므로 index 0 만 잡는다. 변수가 비어 있으면 그 카메라는 건너뛴다.
-#       SO101_CAM_WRIST_USB    -> /dev/so101_cam_wrist
-#       SO101_CAM_OVERVIEW_USB -> /dev/so101_cam_overview
+#   - 카메라: 식별값이 USB 시리얼 번호 또는 USB 인터페이스 경로(예: 1-7.1:1.0) 어느 쪽과
+#     같아도 잡는다. 시리얼로 적으면 보드처럼 포트가 바뀌어도 되지만, 웹캠 시리얼은 모델 공통값인
+#     경우가 많아 같은 모델을 2대 쓰면 구분이 안 되므로 그때만 포트 경로로 적는다(같은 포트 전제).
+#     UVC 카메라는 노드가 2개(index 0 캡처, index 1 메타데이터) 생기므로 index 0 만 잡는다.
+#     변수가 비어 있으면 그 카메라는 건너뛴다.
+#       SO101_CAM_WRIST_ID    -> /dev/so101_cam_wrist
+#       SO101_CAM_OVERVIEW_ID -> /dev/so101_cam_overview
 # 다시 꽂아 번호가 바뀌어도 재실행하면 노드를 새 번호로 갈아 끼운다.
 # 장치가 안 보이면 남아 있던 노드를 지우고 실패(exit 1)한다.
 # `so101-attach list` 는 현재 보이는 보드와 카메라를 .env 에 적을 값과 함께 출력만 한다.
@@ -40,17 +42,19 @@ attach_tty() {
     return 1
 }
 
-# attach_video <노드 이름> <USB 인터페이스 경로>
+# attach_video <노드 이름> <식별값: USB 시리얼 번호 또는 USB 인터페이스 경로>
 attach_video() {
     for vid in /sys/class/video4linux/video*; do
         [ -e "$vid" ] || continue
-        [ "$(basename "$(readlink -f "$vid/device")")" = "$2" ] || continue
         [ "$(cat "$vid/index")" = "0" ] || continue
+        usbif=$(basename "$(readlink -f "$vid/device")")
+        serial=$(cat "$vid/device/../serial" 2>/dev/null)
+        [ "$serial" = "$2" ] || [ "$usbif" = "$2" ] || continue
         mknod_from_sysfs "$1" "$vid"
         return 0
     done
     rm -f "/dev/$1"
-    echo "[so101-attach] camera at usb $2 not found in /sys/class/video4linux (USB unplugged?)" >&2
+    echo "[so101-attach] camera $2 not found in /sys/class/video4linux (USB unplugged?)" >&2
     return 1
 }
 
@@ -60,11 +64,11 @@ if [ "$1" = "list" ]; then
         [ -e "$tty" ] || continue
         echo "  $(basename "$tty") serial=$(cat "$tty/device/../serial" 2>/dev/null)"
     done
-    echo "cameras, capture nodes only (value for SO101_CAM_WRIST_USB / SO101_CAM_OVERVIEW_USB):"
+    echo "cameras, capture nodes only (value for SO101_CAM_WRIST_ID / SO101_CAM_OVERVIEW_ID: serial or usb):"
     for vid in /sys/class/video4linux/video*; do
         [ -e "$vid" ] || continue
         [ "$(cat "$vid/index")" = "0" ] || continue
-        echo "  $(basename "$vid") usb=$(basename "$(readlink -f "$vid/device")") name=\"$(cat "$vid/name")\""
+        echo "  $(basename "$vid") serial=$(cat "$vid/device/../serial" 2>/dev/null) usb=$(basename "$(readlink -f "$vid/device")") name=\"$(cat "$vid/name")\""
     done
     exit 0
 fi
@@ -75,10 +79,10 @@ fi
 rc=0
 attach_tty so101_follower "$SO101_FOLLOWER_SERIAL" || rc=1
 attach_tty so101_leader "$SO101_LEADER_SERIAL" || rc=1
-if [ -n "$SO101_CAM_WRIST_USB" ]; then
-    attach_video so101_cam_wrist "$SO101_CAM_WRIST_USB" || rc=1
+if [ -n "$SO101_CAM_WRIST_ID" ]; then
+    attach_video so101_cam_wrist "$SO101_CAM_WRIST_ID" || rc=1
 fi
-if [ -n "$SO101_CAM_OVERVIEW_USB" ]; then
-    attach_video so101_cam_overview "$SO101_CAM_OVERVIEW_USB" || rc=1
+if [ -n "$SO101_CAM_OVERVIEW_ID" ]; then
+    attach_video so101_cam_overview "$SO101_CAM_OVERVIEW_ID" || rc=1
 fi
 exit $rc

@@ -47,10 +47,11 @@ flowchart LR
 | 15 | 커밋 | **사용자가 직접 지시할 때 실행** | 각 Task 의 Commit Step 은 파일 목록과 메시지만 준비. 계획 문서 자체의 커밋 여부도 사용자가 정한다 |
 | 16 | 편의 alias (Phase 2) | **`Dockerfile` 이 `/root/.bashrc` 에 `acl`(venv 활성화)과 `so101-teleop`(가이드 7절 텔레옵) alias, `so101-help`(명령 요약 출력 셸 함수, README 빠른 참조와 동일 내용)를 heredoc 으로 추가** | 사용자 요청. venv 는 이미지 밖이라 정의만 이미지에 둔다. `acl` 은 호스트 bashrc 의 `alias acl="conda activate lerobot"` 과 같은 이름. ROS 블록이 `/root/.bashrc` 에 `source` 를 추가하는 선례를 따른다. `RUN cat >> ... <<'EOF'` heredoc 은 이 데몬(Docker 29, BuildKit)에서 소형 빌드로 동작과 `$` 보존을 확인했다 |
 | 17 | lerobot 런타임 패키지 (Phase 2) | **`python3-venv`, `libavdevice60`, `libavfilter9` 를 같은 블록에서 apt 설치** | Phase 1 V4 에서 이미지에 `python3.12-venv` 가 없어 venv 생성이 실패했고, torchcodec 이 `libavdevice.so.60` / `libavfilter.so.9` 부재로 로드 실패해 pyav 폴백으로 동작했다. 이미지를 어차피 다시 빌드하므로 함께 넣어 README 의 apt 수동 단계와 pyav 폴백 한계를 없앤다 |
-| 18 | 카메라 패스스루 방식 (Phase 2) | **보드와 같은 attach 방식 확장** — `device_cgroup_rules` 에 `c 81:* rmw` 추가, `so101-attach` 가 sysfs `/sys/class/video4linux` 에서 USB 인터페이스 경로(예: `1-7.1:1.0`)와 `index == 0`(캡처 노드)으로 찾아 `/dev/so101_cam_wrist`, `/dev/so101_cam_overview` 를 `mknod` | 손목 카메라는 팔에 달려 팔과 함께 빼고 꽂으므로 `devices:` 고정 매핑은 결정 1 과 같은 이유로 부적합. 웹캠은 USB 시리얼이 고유하지 않은 경우가 많아(ELP 의 시리얼은 `01.00.00`) 포트 경로로 식별하고 "같은 포트에 꽂는다"를 전제한다. UVC 카메라는 캡처(index 0)와 메타데이터(index 1) 노드 2개가 생기므로 index 0 만 잡는다. 임의 이름 노드를 cv2(`CAP_V4L2`, `CAP_ANY`)와 lerobot `OpenCVCamera` 가 그대로 여는 것을 ELP 로 실증했다(§0.2). 카메라 변수는 선택이며 비어 있으면 건너뛴다 |
+| 18 | 카메라 패스스루 방식 (Phase 2) | **보드와 같은 attach 방식 확장** — `device_cgroup_rules` 에 `c 81:* rmw` 추가, `so101-attach` 가 sysfs `/sys/class/video4linux` 에서 식별값(결정 22: USB 시리얼 또는 USB 인터페이스 경로)과 `index == 0`(캡처 노드)으로 찾아 `/dev/so101_cam_wrist`, `/dev/so101_cam_overview` 를 `mknod` | 손목 카메라는 팔에 달려 팔과 함께 빼고 꽂으므로 `devices:` 고정 매핑은 결정 1 과 같은 이유로 부적합. 웹캠은 USB 시리얼이 고유하지 않은 경우가 많아(ELP 의 시리얼은 `01.00.00`) 포트 경로로 식별하고 "같은 포트에 꽂는다"를 전제한다. UVC 카메라는 캡처(index 0)와 메타데이터(index 1) 노드 2개가 생기므로 index 0 만 잡는다. 임의 이름 노드를 cv2(`CAP_V4L2`, `CAP_ANY`)와 lerobot `OpenCVCamera` 가 그대로 여는 것을 ELP 로 실증했다(§0.2). 카메라 변수는 선택이며 비어 있으면 건너뛴다 |
 | 19 | 카메라 역할 (Phase 2) | **손목 = Realtek "USB Camera"(`0bda:5844`, 새로 연결), 전체 뷰 = ELP 3D Global Shutter 스테레오(`32e4:9282`, 기존 연결)** | 새 카메라의 프레임에 보라색 그리퍼 조가 근접으로 잡혀 손목 카메라로 판정. 사용자가 ELP 는 이미 연결되어 있던 전체 뷰 카메라라고 확인. ELP 는 기존 `docker-compose.camera.yml` 의 `/dev/video0`, `/dev/video1` 매핑도 그대로 유지되어 두 이름으로 보인다(같은 장치를 두 프로세스가 동시에 열지 않는 것은 사용자 책임) |
 | 20 | lerobot 카메라 설정 권장값 (Phase 2) | **손목 640x480 @ 30fps MJPG, 전체 뷰 1280x480 @ 60fps MJPG** (README 에 `--robot.cameras` 예시로 기재) | `v4l2-ctl --list-formats-ext` 결과: Realtek 은 MJPG 640x480/848x480/960x540/1280x720 모두 30fps, ELP 는 MJPG 1280x480(좌우 640x480 병치) 5/10/15/25/60/120fps 로 30fps 가 없다. lerobot 이 요청 fps 를 실제 값과 대조하므로 카메라가 지원하는 값만 쓴다. 조립 가이드 7절 권고(MJPG, 허브 없이 직결)와 일치 |
-| 21 | 장치 조회 (Phase 2) | **`so101-attach list` 부명령** — 보드(시리얼)와 카메라(USB 경로, 이름)를 `.env` 에 적을 값으로 출력 | `lerobot-find-port` / `lerobot-find-cameras` 는 `/dev/ttyACM*`, `/dev/video*` glob 이라 컨테이너에서 쓸 수 없다. 호스트의 `/dev/v4l/by-path` 표기(`usb-0:7.1:1.0`)는 sysfs 인터페이스명(`1-7.1:1.0`)과 형식이 달라 혼동을 부르므로 스크립트가 직접 sysfs 값을 보여 준다 |
+| 21 | 장치 조회 (Phase 2) | **`so101-attach list` 부명령** — 보드(시리얼)와 카메라(시리얼, USB 경로, 이름)를 `.env` 에 적을 값으로 출력 | `lerobot-find-port` / `lerobot-find-cameras` 는 `/dev/ttyACM*`, `/dev/video*` glob 이라 컨테이너에서 쓸 수 없다. 호스트의 `/dev/v4l/by-path` 표기(`usb-0:7.1:1.0`)는 sysfs 인터페이스명(`1-7.1:1.0`)과 형식이 달라 혼동을 부르므로 스크립트가 직접 sysfs 값을 보여 준다 |
+| 22 | 카메라 식별값 (Phase 2 후속, v1.16.0) | **`SO101_CAM_WRIST_ID` / `SO101_CAM_OVERVIEW_ID` 하나에 USB 시리얼 번호 또는 USB 인터페이스 경로를 넣고, 스크립트는 두 속성 중 어느 쪽과 같아도 매칭** | 사용자 요청(팔처럼 포트가 바뀌어도 인식). 이 환경의 두 카메라는 모델이 달라 시리얼(`200901010001`, `01.00.00`)로 구분되므로 포트를 바꿔도 잡힌다. 웹캠 시리얼은 모델 공통값이라 같은 모델 2대면 구분이 안 되므로 경로 매칭을 남겨 그 경우만 포트 고정으로 처리한다. 형식 판별 없이 두 값과 단순 비교해 로직을 최소화 |
 
 ## 0.1 이 계획이 보장하지 않는 것
 
@@ -59,7 +60,7 @@ flowchart LR
 - follower 만 꽂으면 follower 노드만 만들어지고 leader 항목 실패로 종료 코드는 1 이다. 텔레옵은 두 팔이 다 필요하지만 follower 단독 사용을 막지는 않는다.
 - Mac(Docker Desktop) 은 USB 시리얼 패스스루 자체를 지원하지 않는다. 변수 미설정으로 오버레이가 적용되지 않아 기존 동작과 같을 뿐, Mac 에서 팔을 쓰는 방법은 제공하지 않는다.
 - venv 는 이미지 밖이라 이미지 재현성 대상이 아니다. lerobot 커밋 핀은 README 절차에 기록되지만 자동으로 강제되지 않는다.
-- 카메라는 USB 포트 경로로 식별하므로 다른 포트에 꽂으면 `so101-attach list` 로 값을 다시 확인해 `.env` 를 바꾸고 recreate 해야 한다. 카메라 노드도 attach 시점 스냅샷이라 뽑은 뒤 남고, 다음 attach 가 정리한다.
+- 카메라를 USB 인터페이스 경로로 식별한 경우(같은 모델 2대)에만 다른 포트에 꽂으면 `so101-attach list` 로 값을 다시 확인해 `.env` 를 바꾸고 recreate 해야 한다. 시리얼로 식별하면 포트 무관이지만 같은 시리얼(같은 모델)이 2대 보이면 먼저 발견된 쪽이 잡힌다. 카메라 노드도 attach 시점 스냅샷이라 뽑은 뒤 남고, 다음 attach 가 정리한다.
 - 같은 ELP 장치가 카메라 오버레이의 `/dev/video0`(+`/dev/video1`)과 so101 의 `/dev/so101_cam_overview` 두 이름으로 보인다. 두 이름을 동시에 열면 V4L2 스트리밍이 충돌한다. 이 계획은 그것을 막지 않는다.
 - lerobot 의 `--display_data`(rerun 뷰어)와 `lerobot-record` 실행은 검증 범위 밖이다. 카메라는 lerobot `OpenCVCamera` 로 프레임을 읽는 것까지 확인한다.
 - 컨테이너가 `lerobot-calibrate` 로 캘리브레이션을 새로 쓰면 호스트 파일이 root 소유가 된다.
@@ -955,6 +956,38 @@ git commit -m "docs: document so-arm101 aliases, runtime packages, and camera pa
 ```
 
 진행 상황 (2026-09-16): Task 3 Step 9 와 합쳐 1개 커밋 `docs: add so-arm101 passthrough guide and v1.15.0 release notes` 로 커밋. `docker-compose.yml` 의 hostname 고정은 별도 `fix:` 커밋.
+
+### Task 2-4: 카메라 식별값을 시리얼로도 허용 (§0 결정 22, v1.16.0)
+
+**Files:**
+- Modify: `so101-attach.sh`, `docker-compose.so101.yml`, `.env.sample`, `README.md`, `UBUNTU_SETUP.md`, `CHANGELOG.md`(v1.16.0 항목)
+- Modify (gitignored): `.env`
+
+**Interfaces:** `.env` 변수 `SO101_CAM_WRIST_ID`, `SO101_CAM_OVERVIEW_ID`(USB 시리얼 또는 USB 인터페이스 경로). `so101-attach list` 카메라 줄 형식 `videoN serial=... usb=... name="..."`.
+
+- [x] **Step 1: 스크립트·오버레이 변경** — `attach_video` 가 `device/../serial` 과 `basename $(readlink -f device)` 두 값 중 하나와 식별값이 같으면 매칭(`index == 0` 유지). `list` 가 `serial=` 을 함께 출력. 오버레이 환경변수명을 `_ID` 로 교체.
+- [x] **Step 2: `.env` 값을 두 카메라의 USB 시리얼로 교체, `.env.sample` 안내 갱신**
+- [x] **Step 3: 검증**
+
+진행 상황 (2026-09-16): 통과. 격리 컨테이너 dry run 에서 시리얼 매칭(`video2` -> 손목 노드), 경로 매칭(같은 결과), 미설정 시 건너뜀, ELP 부재 시 `not found` 확인. `./start.sh` 재생성 뒤 `so101-attach` 가 보드 2개와 카메라 2개(ELP 는 사용자가 재연결한 뒤 `video0` 으로 잡힘)를 시리얼로 생성, `rc=0`. lerobot `OpenCVCamera` 로 손목 640x480@30, 전체 뷰 1280x480@60 프레임 수신. 재생성 후 터널은 device 코드 없이 `Connected`. 참고로 ELP 는 22:52 에 USB 분리(`usb 1-2.2: USB disconnect`)된 상태였고, 그동안 카메라 오버레이의 stale `/dev/video0` / `/dev/video1` 은 `ENXIO` 를 반환했다.
+
+```bash
+# 격리 컨테이너 dry run: 시리얼 매칭 / 경로 매칭 / 미설정 건너뜀 / 부재 시 not found
+docker run --rm -e SO101_FOLLOWER_SERIAL=x -e SO101_LEADER_SERIAL=y -e SO101_CAM_WRIST_ID=<wrist serial> \
+  -v "$PWD/so101-attach.sh:/usr/local/bin/so101-attach:ro" nginx:alpine sh -c 'so101-attach; ls -l /dev/so101_cam_wrist'
+# 실제 컨테이너: .env 변경 반영 (recreate 1회) 후 attach, lerobot 으로 손목 카메라 프레임 읽기
+./start.sh && docker exec vscode-tunnel so101-attach
+```
+
+- [x] **Step 4: Commit (사용자 지시 시 실행)**
+
+```bash
+git add so101-attach.sh docker-compose.so101.yml .env.sample README.md UBUNTU_SETUP.md CHANGELOG.md docs/superpowers/plans/2026-09-15-so101-passthrough.md
+git commit -m "feat: identify so-arm101 cameras by usb serial as well as port path"
+git tag -a v1.16.0 -m "v1.16.0: camera identification by usb serial"
+```
+
+진행 상황 (2026-09-16): 커밋·태그·푸시 완료. 포트를 바꿔 꽂은 상태(ELP `1-7.1`, Realtek `1-4`)에서 컨테이너 안 attach 가 두 카메라를 올바르게 매핑하고 보드 2개의 서보 12개가 ping 에 응답하는 것까지 확인한 뒤 진행.
 
 ## Phase 2 Verification
 

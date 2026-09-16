@@ -48,8 +48,8 @@ WORKSPACE_PATH=./workspace      # 컨테이너에 마운트할 작업 디렉토�
 | `TAILSCALE_IP` | (미설정) | Tailscale IP. 설정 시 `study-timer-http` 사이드카(`:8765`) 자동 동반 기동 |
 | `SO101_FOLLOWER_SERIAL` | (미설정) | SO-ARM101 follower 보드의 USB 시리얼 번호. `SO101_LEADER_SERIAL` 과 함께 설정 시 `docker-compose.so101.yml` 자동 적용 (Linux 전용) |
 | `SO101_LEADER_SERIAL` | (미설정) | SO-ARM101 leader 보드의 USB 시리얼 번호 |
-| `SO101_CAM_WRIST_USB` | (미설정) | SO-ARM101 손목 카메라의 USB 인터페이스 경로 (예: `1-7.1:1.0`, `so101-attach list` 로 확인). 설정 시 `so101-attach` 가 `/dev/so101_cam_wrist` 생성 |
-| `SO101_CAM_OVERVIEW_USB` | (미설정) | SO-ARM101 전체 뷰 카메라의 USB 인터페이스 경로. 설정 시 `/dev/so101_cam_overview` 생성 |
+| `SO101_CAM_WRIST_ID` | (미설정) | SO-ARM101 손목 카메라 식별값. USB 시리얼 번호(포트 무관, 권장) 또는 USB 인터페이스 경로(예: `1-7.1:1.0`). `so101-attach list` 로 확인. 설정 시 `so101-attach` 가 `/dev/so101_cam_wrist` 생성 |
+| `SO101_CAM_OVERVIEW_ID` | (미설정) | SO-ARM101 전체 뷰 카메라 식별값(형식은 위와 같음). 설정 시 `/dev/so101_cam_overview` 생성 |
 
 > `.env` 파일은 `.gitignore`에 등록되어 있어 Git에 커밋되지 않습니다.
 
@@ -292,7 +292,7 @@ lerobot 에서 쓰기 위한 패스스루입니다. 팔은 평소에 빼두고 �
    전체에 cgroup 접근 권한만 열어 둡니다. 컨테이너 생성 시 장치가 꽂혀 있을 필요가
    없습니다.
 2. 장치를 꽂은 뒤 컨테이너 안에서 `so101-attach` 를 실행하면, 호스트와 공유되는
-   sysfs 에서 보드는 USB 시리얼 번호로, 카메라는 USB 인터페이스 경로로 찾아
+   sysfs 에서 보드는 USB 시리얼 번호로, 카메라는 USB 시리얼 번호 또는 USB 인터페이스 경로로 찾아
    `/dev/so101_follower`, `/dev/so101_leader`, `/dev/so101_cam_wrist`,
    `/dev/so101_cam_overview` 노드를 `mknod` 로 만듭니다. 다시 꽂아 `ttyACM` / `video`
    번호가 바뀌어도 재실행하면 갈아 끼웁니다. 컨테이너 재생성이 없습니다.
@@ -320,8 +320,8 @@ services:
     environment:
       - SO101_FOLLOWER_SERIAL=${SO101_FOLLOWER_SERIAL}
       - SO101_LEADER_SERIAL=${SO101_LEADER_SERIAL}
-      - SO101_CAM_WRIST_USB=${SO101_CAM_WRIST_USB:-}
-      - SO101_CAM_OVERVIEW_USB=${SO101_CAM_OVERVIEW_USB:-}
+      - SO101_CAM_WRIST_ID=${SO101_CAM_WRIST_ID:-}
+      - SO101_CAM_OVERVIEW_ID=${SO101_CAM_OVERVIEW_ID:-}
       - FOLLOWER_PORT=/dev/so101_follower
       - LEADER_PORT=/dev/so101_leader
       - HF_LEROBOT_CALIBRATION=/root/so-arm101/calibration
@@ -417,21 +417,23 @@ lerobot-teleoperate \
 
 **6. 카메라** (손목 카메라 + 전체 뷰 카메라, 선택):
 
-카메라도 같은 attach 방식으로 넘깁니다. 웹캠은 USB 시리얼이 고유하지 않은 경우가 많아
-USB 인터페이스 경로로 식별하므로, 카메라는 항상 같은 USB 포트에 꽂습니다. UVC 카메라는
-노드가 2개(캡처 + 메타데이터) 생기는데 캡처 노드만 잡습니다.
+카메라도 같은 attach 방식으로 넘깁니다. 식별값은 보드처럼 USB 시리얼 번호를 쓰면 포트가
+바뀌어도 잡힙니다. 다만 웹캠 시리얼은 모델 공통값인 경우가 많아(아래 예시의 두 값도 그렇습니다)
+같은 모델을 2대 쓰면 구분이 안 되므로, 그때만 USB 인터페이스 경로(`usb=` 값)를 적고 그
+카메라는 같은 포트에 꽂습니다. UVC 카메라는 노드가 2개(캡처 + 메타데이터) 생기는데 캡처
+노드만 잡습니다.
 
 ```bash
-# 값 확인 (컨테이너 안, 카메라 연결 후). usb= 값을 .env 에 적는다
+# 값 확인 (컨테이너 안, 카메라 연결 후). serial= 또는 usb= 값을 .env 에 적는다
 so101-attach list
-# cameras, capture nodes only (value for SO101_CAM_WRIST_USB / SO101_CAM_OVERVIEW_USB):
-#   video0 usb=1-2.2:1.0 name="3D Global Shutter Camera: 3D Gl"
-#   video2 usb=1-7.1:1.0 name="USB Camera: USB Camera"
+# cameras, capture nodes only (value for SO101_CAM_WRIST_ID / SO101_CAM_OVERVIEW_ID: serial or usb):
+#   video0 serial=01.00.00 usb=1-2.2:1.0 name="3D Global Shutter Camera: 3D Gl"
+#   video2 serial=200901010001 usb=1-7.1:1.0 name="USB Camera: USB Camera"
 ```
 
 ```env
-SO101_CAM_WRIST_USB=1-7.1:1.0
-SO101_CAM_OVERVIEW_USB=1-2.2:1.0
+SO101_CAM_WRIST_ID=200901010001
+SO101_CAM_OVERVIEW_ID=01.00.00
 ```
 
 ```bash

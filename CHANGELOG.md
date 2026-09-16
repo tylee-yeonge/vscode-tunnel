@@ -1,5 +1,21 @@
 # Changelog
 
+## v1.16.0 (2026-09-16)
+
+### Changed
+- SO-ARM101 카메라 식별값을 USB 시리얼 번호로도 받도록 확장 (`so101-attach.sh`, `docker-compose.so101.yml`)
+  - 변수명 `SO101_CAM_WRIST_USB` / `SO101_CAM_OVERVIEW_USB` -> `SO101_CAM_WRIST_ID` /
+    `SO101_CAM_OVERVIEW_ID`
+  - 값이 sysfs 의 USB 시리얼 번호 또는 USB 인터페이스 경로 어느 쪽과 같아도 잡음. 시리얼로 적으면
+    보드처럼 포트가 바뀌어도 인식됨. 웹캠 시리얼은 모델 공통값인 경우가 많아(Realtek USB Camera
+    `200901010001`, ELP 스테레오 `01.00.00`) 같은 모델 2대를 쓸 때만 포트 경로로 구분
+  - `so101-attach list` 가 카메라의 `serial=` 과 `usb=` 를 함께 출력
+- `README.md`, `UBUNTU_SETUP.md`, `.env.sample` 의 카메라 변수 안내 갱신
+
+### Migration
+- `.env` 의 `SO101_CAM_*_USB` 를 `SO101_CAM_*_ID` 로 바꾸고(값은 `so101-attach list` 의 `serial=` 권장)
+  `./start.sh` 로 1회 재생성
+
 ## v1.15.0 (2026-09-15)
 
 ### Added

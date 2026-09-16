@@ -7,8 +7,8 @@ services:
     # 쓸 수 없다. 대신
     #   1) 여기서 major 166 / 81 전체에 cgroup 접근 권한만 열어 두고,
     #   2) 장치를 꽂은 뒤 컨테이너 안에서 so101-attach 를 실행해, 호스트와 공유되는
-    #      sysfs(핫플러그 실시간 반영)에서 보드는 USB 시리얼 번호로, 카메라는 USB 인터페이스
-    #      경로로 찾아 mknod 로 고정 이름의 노드를 만든다.
+    #      sysfs(핫플러그 실시간 반영)에서 보드는 USB 시리얼 번호로, 카메라는 USB 시리얼 번호
+    #      또는 USB 인터페이스 경로로 찾아 mknod 로 고정 이름의 노드를 만든다.
     # mknod 에 필요한 CAP_MKNOD 는 Docker 기본 capability 에 포함된다.
     # 노드는 root:root 로 생성되고 컨테이너 프로세스가 root 라 group_add 불필요.
     device_cgroup_rules:
@@ -18,10 +18,10 @@ services:
       # so101-attach 가 sysfs 에서 찾을 서보 보드 USB 시리얼 번호 (.env, 머신 고유 값)
       - SO101_FOLLOWER_SERIAL=${SO101_FOLLOWER_SERIAL}
       - SO101_LEADER_SERIAL=${SO101_LEADER_SERIAL}
-      # 카메라 USB 인터페이스 경로 (예: 1-7.1:1.0). `so101-attach list` 로 확인.
-      # 비어 있으면 그 카메라는 건너뛴다 (카메라는 선택).
-      - SO101_CAM_WRIST_USB=${SO101_CAM_WRIST_USB:-}
-      - SO101_CAM_OVERVIEW_USB=${SO101_CAM_OVERVIEW_USB:-}
+      # 카메라 식별값: USB 시리얼 번호(포트 무관, 권장) 또는 USB 인터페이스 경로(예: 1-7.1:1.0,
+      # 같은 모델 2대로 시리얼이 겹칠 때). `so101-attach list` 로 확인. 비어 있으면 건너뛴다 (선택).
+      - SO101_CAM_WRIST_ID=${SO101_CAM_WRIST_ID:-}
+      - SO101_CAM_OVERVIEW_ID=${SO101_CAM_OVERVIEW_ID:-}
       # so101-attach 가 만드는 보드 노드 경로. lerobot CLI 의 --robot.port / --teleop.port 에 넣는다.
       # 변수명은 조립 가이드 4.1절(호스트 bashrc)과 같게 맞춰 같은 명령을 그대로 쓴다.
       # 카메라 노드는 /dev/so101_cam_wrist, /dev/so101_cam_overview 로 고정.

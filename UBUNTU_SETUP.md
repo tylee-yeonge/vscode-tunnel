@@ -203,7 +203,7 @@ ls -l /dev/serial/by-id/                    # 팔 2대 USB 연결 후, Serial_ �
 # .env 의 SO101_FOLLOWER_SERIAL / SO101_LEADER_SERIAL 라인 활성화
 ./start.sh                                  # .env 변경으로 컨테이너 1회 재생성
 docker exec vscode-tunnel so101-attach      # 팔(과 카메라)을 꽂은 뒤 매번
-docker exec vscode-tunnel so101-attach list # 카메라 USB 경로 확인 -> .env 의 SO101_CAM_*_USB 설정 (선택)
+docker exec vscode-tunnel so101-attach list # 카메라 시리얼/USB 경로 확인 -> .env 의 SO101_CAM_*_ID 설정 (선택)
 ```
 
 ## 4. 운영 팁
