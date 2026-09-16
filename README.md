@@ -50,6 +50,8 @@ WORKSPACE_PATH=./workspace      # 컨테이너에 마운트할 작업 디렉토�
 | `SO101_LEADER_SERIAL` | (미설정) | SO-ARM101 leader 보드의 USB 시리얼 번호 |
 | `SO101_CAM_WRIST_ID` | (미설정) | SO-ARM101 손목 카메라 식별값. USB 시리얼 번호(포트 무관, 권장) 또는 USB 인터페이스 경로(예: `1-7.1:1.0`). `so101-attach list` 로 확인. 설정 시 `so101-attach` 가 `/dev/so101_cam_wrist` 생성 |
 | `SO101_CAM_OVERVIEW_ID` | (미설정) | SO-ARM101 전체 뷰 카메라 식별값(형식은 위와 같음). 설정 시 `/dev/so101_cam_overview` 생성 |
+| `HF_WRITE_TOKEN` | (미설정) | Hugging Face 쓰기 토큰. 컨테이너의 `HF_TOKEN` 으로 노출되어 huggingface_hub / lerobot 이 바로 읽음 (`lerobot-record --dataset.push_to_hub`, gated 모델) |
+| `HF_USER` | (미설정) | Hugging Face 계정 이름. 컨테이너에 같은 이름으로 노출되어 스터디 가이드의 `lerobot-record --dataset.repo_id=$HF_USER/<name>` 이 그대로 동작 |
 
 > `.env` 파일은 `.gitignore`에 등록되어 있어 Git에 커밋되지 않습니다.
 
@@ -65,7 +67,6 @@ WORKSPACE_PATH=./workspace      # 컨테이너에 마운트할 작업 디렉토�
 |----------|----------|
 | (기본) | `-f docker-compose.yml` |
 | `nvidia-smi` 동작 | `-f docker-compose.gpu.yml` (GPU 활성화) |
-| `/dev/video0` 존재 | `-f docker-compose.camera.yml` (ELP 스테레오 카메라 패스스루) |
 | `.env`의 활성 `SO101_FOLLOWER_SERIAL=` / `SO101_LEADER_SERIAL=` 라인 | `-f docker-compose.so101.yml` (SO-ARM101 서보 보드 패스스루) |
 | `docker-compose.local.yml` 존재 | `-f docker-compose.local.yml` (머신별 오버라이드, gitignored) |
 | `.env`의 활성 `TAILSCALE_IP=` 라인 | `-f docker-compose.tailscale.yml` (study-timer 사이드카) |
@@ -233,52 +234,15 @@ Mac 등 HF 모델을 사용하지 않는 호스트에서는 빈 볼륨만 생성
 
 ---
 
-## USB 카메라 (ELP 스테레오)
+## USB 카메라 (ELP 스테레오 · 손목 카메라)
 
-ELP USB 스테레오 카메라(UVC)가 연결된 호스트에서는 `start.sh` / `reload.sh`가
-`/dev/video0` 존재를 감지해 `docker-compose.camera.yml`을 자동 적용하고, 카메라
-노드를 컨테이너에 패스스루합니다.
+카메라 패스스루는 `docker-compose.so101.yml` 이 담당합니다. `c 81:*` cgroup 규칙으로 video4linux
+접근을 열어 두고, 컨테이너 안에서 `so101-attach` 가 USB 시리얼로 카메라를 찾아
+`/dev/so101_cam_overview`(ELP 스테레오), `/dev/so101_cam_wrist`(손목) 노드를 만듭니다.
 
-```yaml
-# docker-compose.camera.yml
-services:
-  vscode-tunnel:
-    devices:
-      - /dev/video0:/dev/video0
-      - /dev/video1:/dev/video1
-    group_add:
-      - video
-```
-
-**적용 전 노드 확인**: 스테레오 카메라는 좌/우 센서가 각각 video4linux 노드로
-잡히며, 노드 번호는 호스트 하드웨어/연결 순서에 따라 달라질 수 있습니다. 호스트에서
-실제 노드를 먼저 확인하세요.
-
-```bash
-# 카메라 노드 목록
-v4l2-ctl --list-devices
-
-# 특정 노드의 지원 포맷/해상도
-v4l2-ctl -d /dev/video0 --list-formats-ext
-```
-
-노드가 `/dev/video0` / `/dev/video1`과 다르면 `docker-compose.camera.yml`의
-`devices` 항목을 실제 노드로 맞춥니다. 존재하지 않는 노드를 매핑하면 컨테이너
-기동이 실패합니다.
-
-**적용 / 확인**:
-
-```bash
-# 재생성 (devices 는 컨테이너 생성 시점에만 반영, restart 로는 적용 안 됨)
-./reload.sh
-
-# 컨테이너 내부에서 노드 인식 확인
-docker exec vscode-tunnel ls -l /dev/video*
-```
-
-> 카메라가 없는 호스트(Mac 등)에서는 `/dev/video0` 미존재로 오버레이가 적용되지
-> 않아 기존 동작과 동일합니다. 컨테이너 안에서 OpenCV 등으로 영상을 다루는 데
-> 필요한 추가 패키지는 `Dockerfile` 영역이라 이 오버라이드 범위 밖입니다.
+컨테이너 생성 시점에 `/dev/videoN` 번호를 고정하는 `devices:` 매핑은 쓰지 않습니다. 카메라를
+다시 꽂아 호스트 번호가 바뀌면 정적 노드는 `ENXIO` 로 죽기 때문입니다. 설정값과 사용법은 아래
+"SO-ARM101 서보 보드 (LeRobot)" 절을 보세요.
 
 ---
 
@@ -464,11 +428,11 @@ lerobot-record \
 ```
 
 `--dataset.push_to_hub` 의 기본값은 `true` 라 Hub 업로드를 원치 않으면 명시적으로
-끕니다. 데이터셋 기본 저장 위치는 `$HF_HOME/lerobot`(hf-cache 볼륨 안)이며 위치 결정은
-이 오버라이드 범위 밖입니다.
-
-> ELP 는 기존 카메라 오버레이(`/dev/video0`, `/dev/video1`)와 `/dev/so101_cam_overview`
-> 두 이름으로 보입니다. 같은 장치를 두 프로세스가 동시에 열지 마세요.
+끕니다. 업로드하려면 `.env` 의 `HF_WRITE_TOKEN` 에 쓰기 토큰을 넣습니다. `docker-compose.yml`
+이 이를 컨테이너의 `HF_TOKEN` 으로 노출하므로 별도 로그인 없이 인식되며, 확인은 venv 에서
+`hf auth whoami` 입니다. `.env` 의 `HF_USER` 도 같은 이름으로 노출되어 repo_id 의 앞부분
+(`$HF_USER/<name>`) 에 씁니다. 데이터셋 기본 저장 위치는 `$HF_HOME/lerobot`(hf-cache 볼륨 안)이며
+위치 결정은 이 오버라이드 범위 밖입니다.
 
 > `so101-attach` 가 `not found` 를 내면 그 장치의 USB 가 안 꽂힌 것입니다. 찾은 장치의
 > 노드는 만들어지므로 follower 만 꽂은 상태에서는 follower 노드만 생기고 종료 코드는
@@ -551,8 +515,7 @@ docker exec vscode-tunnel bash -lc 'source /opt/ros/jazzy/setup.bash && ros2 --v
 |----|------------|---------|----------|
 | 베이스 이미지 | `.env`의 `BASE_IMAGE` | gitignored | `.env`에 값 설정 |
 | GPU | `docker-compose.gpu.yml` | commit | `nvidia-smi` 동작 |
-| USB 카메라 | `docker-compose.camera.yml` | commit | `/dev/video0` 존재 |
-| SO-ARM101 서보 보드 | `docker-compose.so101.yml` + `so101-attach.sh` + `.env`의 `SO101_FOLLOWER_SERIAL` / `SO101_LEADER_SERIAL` | commit (파일) / gitignored (값) | `.env`에 두 변수 설정. 노드는 팔을 꽂은 뒤 `so101-attach` 로 생성 |
+| SO-ARM101 서보 보드 · USB 카메라 | `docker-compose.so101.yml` + `so101-attach.sh` + `.env`의 `SO101_FOLLOWER_SERIAL` / `SO101_LEADER_SERIAL` | commit (파일) / gitignored (값) | `.env`에 두 변수 설정. 노드는 팔을 꽂은 뒤 `so101-attach` 로 생성 |
 | 머신별 마운트 | `docker-compose.local.yml` | gitignored | 파일 존재 |
 | HF 캐시 위치 | `docker-compose.local.yml` + `.env`의 `HF_CACHE_PATH` | gitignored | `.env`에 `HF_CACHE_PATH` 설정 (미설정 시 named volume `hf-cache` 사용) |
 | Multi-host 사이드카 | `docker-compose.tailscale.yml` + `.env`의 `TAILSCALE_IP` | commit (파일) / gitignored (값) | `.env`에 `TAILSCALE_IP` 설정 |
@@ -785,8 +748,7 @@ docker exec vscode-tunnel code tunnel restart
 ├── Dockerfile                    # 이미지 정의 (multi-stage: extension builder + ${BASE_IMAGE} 런타임)
 ├── docker-compose.yml            # 컨테이너 실행 설정 (build args에 BASE_IMAGE 주입)
 ├── docker-compose.gpu.yml        # NVIDIA GPU 오버라이드 (start.sh 자동 적용)
-├── docker-compose.camera.yml     # ELP USB 스테레오 카메라 패스스루 (/dev/video0 시 자동 적용)
-├── docker-compose.so101.yml      # SO-ARM101 서보 보드 패스스루 (.env SO101_*_SERIAL 설정 시 자동 적용)
+├── docker-compose.so101.yml      # SO-ARM101 서보 보드 · 카메라 패스스루 (.env SO101_*_SERIAL 설정 시 자동 적용)
 ├── so101-attach.sh               # 컨테이너 안에서 sysfs 시리얼 매칭으로 /dev/so101_* 노드 생성 (bind mount)
 ├── docker-compose.tailscale.yml  # study-timer-http 사이드카 (TAILSCALE_IP 시 자동 적용)
 ├── docker-compose.local.yml      # 머신별 마운트 등 로컬 오버라이드 (gitignored)

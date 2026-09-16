@@ -1,5 +1,37 @@
 # Changelog
 
+## v1.17.0 (2026-09-17)
+
+### Added
+- Hugging Face 토큰 패스스루 (`docker-compose.yml`)
+  - `.env` 의 `HF_WRITE_TOKEN` 을 컨테이너의 `HF_TOKEN` 으로 노출. huggingface_hub / lerobot 이
+    읽는 표준 변수명이라 `lerobot-record --dataset.push_to_hub`, gated 모델 다운로드가 별도
+    `hf auth login` 없이 동작
+  - 미설정 시 빈 `HF_TOKEN` 이 되며 huggingface_hub 는 이를 미설정으로 취급. `$HF_HOME/token`
+    파일보다 환경변수가 우선
+- `.env.sample`, `README.md`(환경변수 표, SO-ARM101 record 절) 에 안내 추가
+- `HF_USER` 패스스루 (`docker-compose.yml`, `.env.sample`)
+  - `.env` 의 `HF_USER` 를 컨테이너에 노출. 스터디 가이드의 `lerobot-record --dataset.repo_id=$HF_USER/...`
+    가 컨테이너 재생성 후에도 그대로 동작
+
+### Changed
+- 카메라 패스스루를 `docker-compose.so101.yml` 로 일원화하고 `docker-compose.camera.yml` 삭제
+  - `start.sh` / `reload.sh` 의 `/dev/video0` 감지 블록 제거. 정적 `devices:` 매핑은 카메라를 다시 꽂아
+    호스트 번호가 바뀌면 컨테이너 노드가 `ENXIO` 로 죽는 문제가 있었고, so101 오버레이의 `c 81:*`
+    cgroup 규칙 + `so101-attach` 가 같은 역할을 USB 시리얼 기반으로 대신함
+  - 컨테이너의 `/dev/video0`, `/dev/video1` 은 더 이상 생기지 않음. `/dev/so101_cam_overview`,
+    `/dev/so101_cam_wrist` 를 사용
+- `entrypoint.sh` 가 기동 시 `so101-attach` 를 1회 실행 (so101 오버레이 적용 시). 장치가 꽂힌 채
+  재생성/재시작된 경우 수동 실행이 불필요. 장치가 없으면 exit 1 이지만 기동을 막지 않음
+
+### Migration
+- `.env` 에 `HF_WRITE_TOKEN=hf_...` 추가 후 `./start.sh` 로 1회 재생성. 확인:
+  ```bash
+  docker exec vscode-tunnel bash -ic 'acl && hf auth whoami'
+  ```
+- `.env` 에 `HF_USER=<HF 아이디>` 추가 (같은 재생성으로 반영). 확인: `docker exec vscode-tunnel printenv HF_USER`
+- 컨테이너에서 `/dev/video0` / `/dev/video1` 을 쓰던 명령은 `/dev/so101_cam_overview` 로 바꾼다
+
 ## v1.16.0 (2026-09-16)
 
 ### Changed

@@ -35,7 +35,7 @@ flowchart LR
 | 3 | 보드 식별 키 | **USB 시리얼 번호만** — `.env` 의 `SO101_FOLLOWER_SERIAL` / `SO101_LEADER_SERIAL` | sysfs 의 `serial` 속성과 문자열 그대로 비교할 수 있어 by-id 경로에서 파싱할 필요가 없음. 값은 머신 고유라 README "머신별 오버라이드 패턴"의 `TAILSCALE_IP` 축과 같은 "파일은 commit, 값은 gitignored" 방식. **이 문서, README, CHANGELOG 어디에도 실제 값을 적지 않는다** |
 | 4 | 오버레이 감지 조건 | **`.env` 에 두 변수의 활성 라인이 모두 있을 때** (노드 존재 무관) | 노드는 나중에 `so101-attach` 가 만들므로 컨테이너 생성 시 팔이 없어도 된다. `TAILSCALE_IP` 감지와 같은 `grep -qE` 패턴을 재사용 |
 | 5 | 스크립트 배치 | **리포의 `so101-attach.sh` 를 `/usr/local/bin/so101-attach:ro` 로 bind mount** | `Dockerfile` 무변경(재빌드 없음). `docker-compose.tailscale.yml` 이 `./study-timer-nginx.conf` 를 같은 방식으로 마운트하는 선례가 있음. `entrypoint.sh` 에 넣는 방법은 미커밋 변경과 충돌하고 재실행이 불편해 비채택 |
-| 6 | attach 실행 시점 | **수동** — 팔을 꽂은 뒤 컨테이너 터미널에서 `so101-attach` (호스트에서는 `docker exec vscode-tunnel so101-attach`) | 팔이 보통 빠져 있어 컨테이너 시작 시 자동 실행(오버레이 `command:` 오버라이드)은 실익이 적음. 호스트 udev `RUN+=` 로 `docker exec` 를 거는 자동화는 호스트 측 부품이 늘어 후속 과제로 미룸 |
+| 6 | attach 실행 시점 | **컨테이너 기동 시 `entrypoint.sh` 가 1회 자동 실행(so101 오버레이 적용 시, 실패해도 기동 계속) + 나중에 꽂은 장치는 컨테이너 터미널에서 `so101-attach` 수동 실행** (호스트에서는 `docker exec vscode-tunnel so101-attach`) | 장치가 꽂힌 채 재생성·재시작되는 경우가 잦아(v1.17.0) 기동 시 자동 실행을 넣었다. 핫플러그는 여전히 수동. 호스트 udev `RUN+=` 로 `docker exec` 를 거는 자동화는 호스트 측 부품이 늘어 후속 과제로 미룸 |
 | 7 | lerobot 설치 위치 | **`/workspace/venvs/lerobot`, 시스템 `python3 -m venv`** — 이미지 밖 | lerobot 은 `numpy>=2.0,<2.3` 을 요구하는데 이미지 시스템 Python 의 `cv2` 는 소스 빌드 4.10 이 numpy 1.26.4 에 링크된 상태라 시스템에 설치하면 `cv2` 가 깨진다. torch 포함 수 GB 를 13.7GB 이미지에 더하지 않는다. `/workspace` 는 bind mount 라 recreate 후에도 남고 이미 `/workspace/venvs/remerge` 관례가 있다. uv 관리 Python(`/root/.local/share/uv`)은 writable layer 에 있어 recreate 후 venv 가 깨지므로(현재 `remerge` venv 가 그 상태이고 `uv` 도 컨테이너에 없음) 이미지에 들어 있는 시스템 Python 3.12.3 을 쓴다. `python3.12-venv` 는 이미지에 없어 venv 를 만드는 시점에만 컨테이너 안에서 apt 설치하며(writable layer), 만들어진 venv 는 `/usr/bin/python3.12` 심볼릭 링크라 재생성 후에도 동작한다 |
 | 8 | lerobot 버전 | **호스트 `~/lerobot` 체크아웃과 같은 커밋 `b6ec0060779550c0a157ae34feb89e0cf86012a8` 으로 git 핀**, extras `core_scripts,feetech` | 호스트 conda 환경(`lerobot 0.6.2 editable`)과 같은 코드라 캘리브레이션 JSON 포맷과 CLI 인자가 호환. extras 는 조립 가이드 3.1절과 동일 |
 | 9 | 캘리브레이션 공유 | **`~/Documents/so-arm101/calibration` bind mount -> `/root/so-arm101/calibration` + `HF_LEROBOT_CALIBRATION`** | 조립 가이드 6.3절이 정한 위치이자 호스트 bashrc 와 같은 변수명. lerobot 은 `HF_LEROBOT_CALIBRATION / "robots" / "so_follower" / "<id>.json"` 으로 읽으므로(`robots/robot.py:49-53`) 기존 구조 그대로 쓸 수 있다. 기본 경로(`$HF_HOME/lerobot/calibration`, hf-cache named volume 안) 위에 중첩 bind 하는 방식은 설명이 어려워 비채택 |
@@ -48,20 +48,19 @@ flowchart LR
 | 16 | 편의 alias (Phase 2) | **`Dockerfile` 이 `/root/.bashrc` 에 `acl`(venv 활성화)과 `so101-teleop`(가이드 7절 텔레옵) alias, `so101-help`(명령 요약 출력 셸 함수, README 빠른 참조와 동일 내용)를 heredoc 으로 추가** | 사용자 요청. venv 는 이미지 밖이라 정의만 이미지에 둔다. `acl` 은 호스트 bashrc 의 `alias acl="conda activate lerobot"` 과 같은 이름. ROS 블록이 `/root/.bashrc` 에 `source` 를 추가하는 선례를 따른다. `RUN cat >> ... <<'EOF'` heredoc 은 이 데몬(Docker 29, BuildKit)에서 소형 빌드로 동작과 `$` 보존을 확인했다 |
 | 17 | lerobot 런타임 패키지 (Phase 2) | **`python3-venv`, `libavdevice60`, `libavfilter9` 를 같은 블록에서 apt 설치** | Phase 1 V4 에서 이미지에 `python3.12-venv` 가 없어 venv 생성이 실패했고, torchcodec 이 `libavdevice.so.60` / `libavfilter.so.9` 부재로 로드 실패해 pyav 폴백으로 동작했다. 이미지를 어차피 다시 빌드하므로 함께 넣어 README 의 apt 수동 단계와 pyav 폴백 한계를 없앤다 |
 | 18 | 카메라 패스스루 방식 (Phase 2) | **보드와 같은 attach 방식 확장** — `device_cgroup_rules` 에 `c 81:* rmw` 추가, `so101-attach` 가 sysfs `/sys/class/video4linux` 에서 식별값(결정 22: USB 시리얼 또는 USB 인터페이스 경로)과 `index == 0`(캡처 노드)으로 찾아 `/dev/so101_cam_wrist`, `/dev/so101_cam_overview` 를 `mknod` | 손목 카메라는 팔에 달려 팔과 함께 빼고 꽂으므로 `devices:` 고정 매핑은 결정 1 과 같은 이유로 부적합. 웹캠은 USB 시리얼이 고유하지 않은 경우가 많아(ELP 의 시리얼은 `01.00.00`) 포트 경로로 식별하고 "같은 포트에 꽂는다"를 전제한다. UVC 카메라는 캡처(index 0)와 메타데이터(index 1) 노드 2개가 생기므로 index 0 만 잡는다. 임의 이름 노드를 cv2(`CAP_V4L2`, `CAP_ANY`)와 lerobot `OpenCVCamera` 가 그대로 여는 것을 ELP 로 실증했다(§0.2). 카메라 변수는 선택이며 비어 있으면 건너뛴다 |
-| 19 | 카메라 역할 (Phase 2) | **손목 = Realtek "USB Camera"(`0bda:5844`, 새로 연결), 전체 뷰 = ELP 3D Global Shutter 스테레오(`32e4:9282`, 기존 연결)** | 새 카메라의 프레임에 보라색 그리퍼 조가 근접으로 잡혀 손목 카메라로 판정. 사용자가 ELP 는 이미 연결되어 있던 전체 뷰 카메라라고 확인. ELP 는 기존 `docker-compose.camera.yml` 의 `/dev/video0`, `/dev/video1` 매핑도 그대로 유지되어 두 이름으로 보인다(같은 장치를 두 프로세스가 동시에 열지 않는 것은 사용자 책임) |
+| 19 | 카메라 역할 (Phase 2) | **손목 = Realtek "USB Camera"(`0bda:5844`, 새로 연결), 전체 뷰 = ELP 3D Global Shutter 스테레오(`32e4:9282`, 기존 연결)** | 새 카메라의 프레임에 보라색 그리퍼 조가 근접으로 잡혀 손목 카메라로 판정. 사용자가 ELP 는 이미 연결되어 있던 전체 뷰 카메라라고 확인. ELP 의 정적 `devices:` 매핑(`docker-compose.camera.yml`)은 v1.17.0 에서 삭제되어 카메라 패스스루는 so101 오버레이로 일원화됐고, 컨테이너에서 ELP 는 `/dev/so101_cam_overview` 한 이름으로만 보인다 |
 | 20 | lerobot 카메라 설정 권장값 (Phase 2) | **손목 640x480 @ 30fps MJPG, 전체 뷰 1280x480 @ 60fps MJPG** (README 에 `--robot.cameras` 예시로 기재) | `v4l2-ctl --list-formats-ext` 결과: Realtek 은 MJPG 640x480/848x480/960x540/1280x720 모두 30fps, ELP 는 MJPG 1280x480(좌우 640x480 병치) 5/10/15/25/60/120fps 로 30fps 가 없다. lerobot 이 요청 fps 를 실제 값과 대조하므로 카메라가 지원하는 값만 쓴다. 조립 가이드 7절 권고(MJPG, 허브 없이 직결)와 일치 |
 | 21 | 장치 조회 (Phase 2) | **`so101-attach list` 부명령** — 보드(시리얼)와 카메라(시리얼, USB 경로, 이름)를 `.env` 에 적을 값으로 출력 | `lerobot-find-port` / `lerobot-find-cameras` 는 `/dev/ttyACM*`, `/dev/video*` glob 이라 컨테이너에서 쓸 수 없다. 호스트의 `/dev/v4l/by-path` 표기(`usb-0:7.1:1.0`)는 sysfs 인터페이스명(`1-7.1:1.0`)과 형식이 달라 혼동을 부르므로 스크립트가 직접 sysfs 값을 보여 준다 |
 | 22 | 카메라 식별값 (Phase 2 후속, v1.16.0) | **`SO101_CAM_WRIST_ID` / `SO101_CAM_OVERVIEW_ID` 하나에 USB 시리얼 번호 또는 USB 인터페이스 경로를 넣고, 스크립트는 두 속성 중 어느 쪽과 같아도 매칭** | 사용자 요청(팔처럼 포트가 바뀌어도 인식). 이 환경의 두 카메라는 모델이 달라 시리얼(`200901010001`, `01.00.00`)로 구분되므로 포트를 바꿔도 잡힌다. 웹캠 시리얼은 모델 공통값이라 같은 모델 2대면 구분이 안 되므로 경로 매칭을 남겨 그 경우만 포트 고정으로 처리한다. 형식 판별 없이 두 값과 단순 비교해 로직을 최소화 |
 
 ## 0.1 이 계획이 보장하지 않는 것
 
-- 팔을 꽂은 뒤 `so101-attach` 를 실행하기 전에는 노드가 없거나 이전 값으로 남아 있다. 자동 감지·자동 실행은 없다(결정 6).
+- 컨테이너 기동 시 `entrypoint.sh` 가 `so101-attach` 를 1회 실행하지만, 그 뒤 꽂은 장치는 `so101-attach` 를 다시 실행하기 전까지 노드가 없거나 이전 값으로 남아 있다. 핫플러그 자동 감지는 없다(결정 6).
 - 팔을 뽑은 뒤에도 노드가 남는다. 열면 실패하고, 다음 `so101-attach` 가 정리한다.
 - follower 만 꽂으면 follower 노드만 만들어지고 leader 항목 실패로 종료 코드는 1 이다. 텔레옵은 두 팔이 다 필요하지만 follower 단독 사용을 막지는 않는다.
 - Mac(Docker Desktop) 은 USB 시리얼 패스스루 자체를 지원하지 않는다. 변수 미설정으로 오버레이가 적용되지 않아 기존 동작과 같을 뿐, Mac 에서 팔을 쓰는 방법은 제공하지 않는다.
 - venv 는 이미지 밖이라 이미지 재현성 대상이 아니다. lerobot 커밋 핀은 README 절차에 기록되지만 자동으로 강제되지 않는다.
 - 카메라를 USB 인터페이스 경로로 식별한 경우(같은 모델 2대)에만 다른 포트에 꽂으면 `so101-attach list` 로 값을 다시 확인해 `.env` 를 바꾸고 recreate 해야 한다. 시리얼로 식별하면 포트 무관이지만 같은 시리얼(같은 모델)이 2대 보이면 먼저 발견된 쪽이 잡힌다. 카메라 노드도 attach 시점 스냅샷이라 뽑은 뒤 남고, 다음 attach 가 정리한다.
-- 같은 ELP 장치가 카메라 오버레이의 `/dev/video0`(+`/dev/video1`)과 so101 의 `/dev/so101_cam_overview` 두 이름으로 보인다. 두 이름을 동시에 열면 V4L2 스트리밍이 충돌한다. 이 계획은 그것을 막지 않는다.
 - lerobot 의 `--display_data`(rerun 뷰어)와 `lerobot-record` 실행은 검증 범위 밖이다. 카메라는 lerobot `OpenCVCamera` 로 프레임을 읽는 것까지 확인한다.
 - 컨테이너가 `lerobot-calibrate` 로 캘리브레이션을 새로 쓰면 호스트 파일이 root 소유가 된다.
 - `lerobot-record` 의 데이터셋 저장 위치는 다루지 않는다(결정 12). 기본값은 hf-cache named volume 안이다.
@@ -128,7 +127,7 @@ docker compose -f docker-compose.yml -f <overlay> config | grep -A1 device_cgrou
 ## Global Constraints
 
 - 회귀 정의: (a) `.env` 에 SO101 변수가 없는 호스트(Mac 포함)에서 `./start.sh` / `./reload.sh` 의 `COMPOSE_ARGS` 가 이전과 동일해야 한다. (b) 변수가 있고 팔이 빠진 상태에서 `./start.sh` 가 성공하고, `so101-attach` 는 노드를 만들지 않은 채 종료 코드 1 과 `not found` 메시지로 끝나야 한다. (c) 기존 카메라 오버레이(`/dev/video0`, `/dev/video1`)와 공존해야 한다.
-- `docker-compose.yml`, `entrypoint.sh` 는 수정하지 않는다. `Dockerfile` 은 `ENV HF_HOME` 뒤, `WORKDIR /workspace` 앞에 SO-ARM101 지원 블록(apt 3개 + alias heredoc)만 추가하고 그 위 레이어(OpenCV 빌드, ROS 등)는 건드리지 않는다.
+- `docker-compose.yml` 은 hostname 고정(별건 fix)과 HF 토큰·계정 노출(v1.17.0)만, `entrypoint.sh` 는 기동 시 `so101-attach` 1회 실행(v1.17.0)만 추가한다. `Dockerfile` 은 `ENV HF_HOME` 뒤, `WORKDIR /workspace` 앞에 SO-ARM101 지원 블록(apt 3개 + alias heredoc)만 추가하고 그 위 레이어(OpenCV 빌드, ROS 등)는 건드리지 않는다.
 - `entrypoint.sh` 에는 이 작업과 무관한 미커밋 변경(릴레이 단절 미복구 감지, `RECONNECT_GRACE`)이 있다. 모든 커밋은 `git add <파일>` 로 파일 단위로 스테이징하고 `entrypoint.sh` 를 섞지 않는다. `.Dockerfile.swp`(vim 스왑 잔재)도 스테이징하지 않는다.
 - 커밋과 태그는 사용자가 지시할 때만 실행한다. Commit Step 의 명령은 그때 쓸 준비물이다.
 - `.env` 는 gitignored 이며 커밋하지 않는다. 시리얼 번호는 `.env` 에만 존재하고, 이 문서·`.env.sample`·README·CHANGELOG·UBUNTU_SETUP 에는 자리표시자(`XXXXXXXXXX` / `YYYYYYYYYY`)만 쓴다.
@@ -136,7 +135,7 @@ docker compose -f docker-compose.yml -f <overlay> config | grep -A1 device_cgrou
 - `start.sh` 와 `reload.sh` 에는 같은 감지 블록을 동일하게 넣는다(`reload.sh` 주석 규약 "새 오버레이가 늘면 양쪽 모두 갱신할 것").
 - README 파일 구성 트리는 기존에 유니코드 박스 문자(`├──`)를 쓰고 있다. 줄을 추가할 때 기존 문자를 그대로 따르고, 트리 전체를 ASCII 로 바꾸는 작업은 범위 밖이다.
 - `UBUNTU_SETUP.md` 3-6 감지 목록에 카메라 오버레이가 빠져 있는 것은 기존 상태다. 이 작업은 SO-ARM101 항목만 추가하고 카메라 항목은 건드리지 않는다(언급만).
-- 하지 않는 것: 호스트 udev 자동화, 컨테이너 시작 시 자동 attach, 데이터셋 위치 설정, venv 자동 생성(entrypoint), 단일 팔 전용 모드.
+- 하지 않는 것: 호스트 udev 자동화(핫플러그 자동 attach), 데이터셋 위치 설정, venv 자동 생성(entrypoint), 단일 팔 전용 모드.
 
 ---
 
@@ -1059,10 +1058,10 @@ for name, path, w, h, fps in (("wrist", "/dev/so101_cam_wrist", 640, 480, 30), (
 - `docker-compose.so101.yml` — cgroup 규칙(시리얼 166, video4linux 81), 환경변수(보드 시리얼, 카메라 USB 경로, 포트, 캘리브레이션 위치), 스크립트·캘리브레이션 마운트
 - `so101-attach.sh` — sysfs 에서 보드(시리얼)와 카메라(USB 인터페이스 경로, index 0)를 찾아 `mknod`, `list` 부명령 (POSIX sh, 실행 비트)
 
-### A.3 변경 없음 (의도적 보존)
-- `docker-compose.yml` — 오버레이로 분리. `env_file: .env` 가 SO101 변수를 컨테이너에 주입하는 기존 동작을 그대로 활용
-- `entrypoint.sh` — 미커밋 변경(릴레이 단절 감지)이 진행 중이며 이 작업과 무관. attach 를 여기에 넣지 않음(결정 5)
-- `docker-compose.camera.yml` — 카메라 노드는 항상 꽂혀 있어 `devices` 방식 유지. `lerobot-record` 의 카메라 입력으로 그대로 사용 가능
+### A.3 변경 없음 (의도적 보존) / 삭제
+- `docker-compose.camera.yml` — v1.17.0 에서 삭제. ELP 의 정적 `devices:` 매핑은 재연결 시 `ENXIO` 로 죽는 문제가 있어 so101 오버레이의 `c 81:*` + `so101-attach` 로 일원화. `start.sh` / `reload.sh` 의 `/dev/video0` 감지 블록도 함께 제거
+- `docker-compose.yml` — 오버레이로 분리. `env_file: .env` 가 SO101 변수를 컨테이너에 주입하는 기존 동작을 그대로 활용. hostname 고정과 `HF_TOKEN` / `HF_USER` 노출만 추가
+- `entrypoint.sh` — 기동 시 `so101-attach || true` 1회 실행만 추가(v1.17.0). 스크립트 본체는 bind mount 파일(결정 5)
 - `.gitignore` — `.env` 는 이미 제외. `docs/superpowers/plans/` 는 다른 계획 문서가 이미 커밋된 디렉터리이며, 이 계획 문서의 커밋 여부는 사용자 결정
 
 ### A.4 런타임 생성물 (리포 밖)
