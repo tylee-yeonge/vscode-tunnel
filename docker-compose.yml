@@ -30,6 +30,14 @@ services:
       # claude-config named volume 에 함께 남는다. 미설정 시 /root/.claude.json 은
       # writable layer 에 있어 컨테이너 recreate 마다 소실된다.
       - CLAUDE_CONFIG_DIR=/root/.claude
+      # Hugging Face 토큰. .env 의 HF_WRITE_TOKEN 을 huggingface_hub / lerobot 이 읽는 표준
+      # 변수명으로 노출한다 (lerobot-record --dataset.push_to_hub, gated 모델 다운로드 등).
+      # 미설정 시 빈 값이 되며 huggingface_hub 는 빈 HF_TOKEN 을 미설정으로 취급한다.
+      # 이 변수는 $HF_HOME/token 파일(hf auth login 결과)보다 우선한다.
+      - HF_TOKEN=${HF_WRITE_TOKEN:-}
+      # Hugging Face 계정 이름. lerobot 데이터셋 repo_id (<HF_USER>/<name>) 의 앞부분.
+      # 스터디 가이드의 lerobot-record 명령이 $HF_USER 를 그대로 쓴다. 미설정 시 빈 값.
+      - HF_USER=${HF_USER:-}
       # HTTPS 방식 사용 시 GitHub Personal Access Token
       # - GIT_TOKEN=ghp_xxxxxxxxxxxx
     healthcheck:
