@@ -30,11 +30,6 @@ if command -v nvidia-smi > /dev/null 2>&1 && nvidia-smi > /dev/null 2>&1; then
     COMPOSE_ARGS="$COMPOSE_ARGS -f docker-compose.gpu.yml"
 fi
 
-if [ -e /dev/video0 ]; then
-    echo "Camera detected: enabling ELP stereo camera passthrough"
-    COMPOSE_ARGS="$COMPOSE_ARGS -f docker-compose.camera.yml"
-fi
-
 # SO-ARM101 서보 보드 (.env 의 SO101_FOLLOWER_SERIAL / SO101_LEADER_SERIAL 활성 라인이 모두 있을 때)
 # 노드는 팔을 꽂은 뒤 컨테이너 안에서 so101-attach 가 만들므로, 여기서는 팔이 꽂혀
 # 있는지 보지 않는다 (팔은 평소에 빼두고 쓸 때만 꽂는다).

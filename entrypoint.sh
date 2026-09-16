@@ -296,6 +296,13 @@ deploy_study_timer
 : > "$TUNNEL_LOG"
 tail -F "$TUNNEL_LOG" 2>/dev/null &
 
+# SO-ARM101 장치 노드 생성 (docker-compose.so101.yml 적용 시에만 so101-attach 가 마운트된다).
+# 장치가 꽂힌 채 재생성/재시작된 경우를 자동으로 처리한다. 장치가 없으면 exit 1 이므로
+# 기동을 막지 않도록 || true. 나중에 꽂은 장치는 컨테이너 안에서 so101-attach 를 직접 실행.
+if command -v so101-attach >/dev/null 2>&1; then
+    so101-attach || true
+fi
+
 # 최초 시작
 start_tunnel
 
