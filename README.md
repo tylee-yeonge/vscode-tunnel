@@ -16,6 +16,7 @@ Mac(Apple Silicon)과 Ubuntu(x86_64) 모두 별도 수정 없이 동작합니다
 | Claude Code | 최신 버전 (native installer) |
 | 빌드 도구 | CMake, Ninja, GDB, build-essential |
 | SO-ARM101 지원 | `python3-venv`(lerobot venv 생성), `libavdevice60` / `libavfilter9`(torchcodec FFmpeg 런타임), alias `acl` / `so101-teleop` / `so101-help` (v1.15.0+) |
+| ros2_control 빌드 지원 | `colcon`, `rosdep`(init / update 완료), `ros2_control` / `ros2_controllers`, `xacro`, `joint_state_publisher`(-gui), feetech 드라이버 빌드 의존성 / **ROS2 가 설치되는 Linux 호스트 빌드에만 포함** (v1.18.0+) |
 
 ---
 
@@ -497,6 +498,37 @@ flowchart LR
 # 설치 확인
 docker exec vscode-tunnel bash -lc 'source /opt/ros/jazzy/setup.bash && ros2 --version'
 ```
+
+### ros2_control 워크스페이스 빌드 지원 (v1.18.0+)
+
+`ros-jazzy-desktop` 에는 빌드 도구(colcon, rosdep)와 ros2_control, xacro 가 들어 있지 않습니다.
+SO-ARM101 을 ROS2 로 구동하는 워크스페이스(`/workspace/so101_ws` — `feetech_ros2_driver` +
+`so101_description`)를 빌드 / 실행할 수 있도록 아래 패키지를 이미지에 포함합니다.
+ROS2 와 같은 조건(`INSTALL_ROS=true`)에서만 설치되므로 Mac 빌드에는 영향이 없습니다.
+
+| 패키지 | 용도 |
+|--------|------|
+| `python3-colcon-common-extensions` | 워크스페이스 빌드 도구 `colcon`. 시스템에 없으면 venv 에 pip 로 깔린 colcon 만 잡혀 venv 의 파이썬으로 빌드됨 |
+| `python3-rosdep` | `package.xml` 의 의존성을 apt 로 설치. `rosdep init` / `rosdep update` 까지 이미지 빌드에서 수행 |
+| `ros-jazzy-ros2-control`, `ros-jazzy-ros2-controllers` | `hardware_interface`, `controller_manager`, `joint_state_broadcaster`, `forward_command_controller` 등 |
+| `ros-jazzy-xacro` | `.urdf.xacro` 전개 |
+| `ros-jazzy-joint-state-publisher`, `-gui` | 팔 없이 URDF 만 띄우는 display launch 용 |
+| `libserial-dev`, `libexpected-dev`, `librange-v3-dev` | `feetech_ros2_driver` 의 빌드 의존성 |
+
+워크스페이스(`build/`, `install/` 포함)는 bind mount 된 `/workspace` 에 있어 컨테이너 재생성에도
+남습니다. 빌드는 파이썬 venv 를 끈 상태에서 합니다(C++ 패키지라 venv 가 필요 없고, venv 가 켜져
+있으면 CMake 가 venv 의 파이썬을 잡음).
+
+```bash
+# 설치 확인
+docker exec vscode-tunnel bash -lc 'which colcon rosdep && source /opt/ros/jazzy/setup.bash && ros2 pkg prefix controller_manager && ros2 pkg prefix xacro'
+
+# 워크스페이스 빌드 (컨테이너 안)
+cd /workspace/so101_ws && colcon build --symlink-install
+```
+
+> `rosdep update` 는 빌드 시점의 네트워크 상태에 좌우되므로 실패해도 이미지 빌드를 막지 않습니다.
+> 빌드 로그에 `rosdep update failed` 가 찍혔다면 컨테이너에서 `rosdep update` 를 한 번 실행합니다.
 
 > **OpenCV 중복 주의**: 이 이미지는 OpenCV 4.10을 소스 빌드해 `/usr/local`에
 > 설치합니다. 반면 `ros-jazzy-cv-bridge`는 apt 의존성으로 noble 시스템

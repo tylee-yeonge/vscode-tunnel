@@ -1,5 +1,34 @@
 # Changelog
 
+## v1.18.0 (2026-09-22)
+
+### Added
+- `Dockerfile` 말미에 ros2_control 워크스페이스 빌드 지원 블록 추가 (상위 레이어 캐시 무효화 없음)
+  - SO-ARM101 을 ROS2 로 구동하는 워크스페이스(`/workspace/so101_ws` — `feetech_ros2_driver` +
+    `so101_description`)의 빌드 / 실행에 필요한 패키지. 컨테이너 안에서 `apt install` 로 깔아 쓰던
+    것이라 재생성 때마다 사라졌음
+  - `python3-colcon-common-extensions`: 시스템 colcon. 없으면 venv 에 pip 로 깔린 colcon 만 잡혀
+    venv 의 파이썬으로 빌드됨
+  - `python3-rosdep`: `rosdep init` / `rosdep update --rosdistro jazzy` 까지 이미지 빌드에서 수행.
+    update 는 네트워크 상태에 좌우되므로 실패해도 빌드를 막지 않음
+  - `ros-jazzy-ros2-control`, `ros-jazzy-ros2-controllers`, `ros-jazzy-xacro`: `ros-jazzy-desktop`
+    에 들어 있지 않은 ros2_control 본체 / 컨트롤러 / xacro
+  - `ros-jazzy-joint-state-publisher`, `ros-jazzy-joint-state-publisher-gui`: 팔 없이 URDF 만 띄우는
+    display launch 용
+  - `libserial-dev`, `libexpected-dev`, `librange-v3-dev`: `feetech_ros2_driver` 의 빌드 의존성
+  - ROS2 Jazzy 블록과 같은 `INSTALL_ROS=true` 조건으로 감싸 Mac 빌드에는 영향 없음 (Mac 에는 ROS
+    apt 저장소가 없어 `ros-jazzy-*` 패키지를 설치할 수 없음)
+- `README.md` 의 포함 구성 표와 "ROS2 Jazzy" 절에 안내 추가
+
+### Migration
+- 우분투 PC 에서 `./reload.sh` 로 이미지를 재빌드 (추가 레이어 1개만 새로 빌드됨). 컨테이너가 1회
+  재생성되어 터널이 잠시 끊김. 확인:
+  ```bash
+  docker exec vscode-tunnel bash -lc 'which colcon rosdep && source /opt/ros/jazzy/setup.bash && ros2 pkg prefix controller_manager && ros2 pkg prefix xacro'
+  ```
+- 재빌드 전까지는 기존 컨테이너에 수동으로 설치한 패키지가 그대로 동작함. 재빌드 후에는
+  `/workspace/so101_ws` 를 다시 빌드할 필요 없음 (`build/`, `install/` 은 `/workspace` 에 남음)
+
 ## v1.17.0 (2026-09-17)
 
 ### Added
