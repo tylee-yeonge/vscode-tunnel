@@ -227,6 +227,45 @@ HELP
 }
 EOF
 
+# ========================================
+# ros2_control + SO-ARM101 ROS2 워크스페이스 빌드 지원 (INSTALL_ROS=true 일 때만)
+# SO-ARM101 을 ROS2 로 구동하는 워크스페이스 (/workspace/so101_ws: feetech_ros2_driver +
+# so101_description) 의 빌드 / 실행에 필요한 패키지. 워크스페이스는 bind mount 된 /workspace 에
+# 남지만 apt 패키지는 컨테이너 재생성 때 사라지므로 이미지에 둔다.
+# - python3-colcon-common-extensions: 워크스페이스 빌드 도구 colcon. 시스템에 없으면 venv 에
+#   pip 로 깔린 colcon 만 잡혀 venv 의 파이썬으로 빌드된다
+# - python3-rosdep: package.xml 의 의존성을 apt 로 설치하는 도구. init / update 까지 이미지에서
+#   끝낸다 (update 결과는 /root/.ros/rosdep 에 남는다). update 는 네트워크 상태에 좌우되므로
+#   실패해도 빌드를 막지 않는다 (컨테이너에서 rosdep update 를 다시 실행하면 된다)
+# - ros-jazzy-ros2-control / ros-jazzy-ros2-controllers: hardware_interface, controller_manager,
+#   joint_state_broadcaster, forward_command_controller 등. ros-jazzy-desktop 에 들어 있지 않다
+# - ros-jazzy-xacro: .urdf.xacro 전개. ros-jazzy-desktop 에 들어 있지 않다
+# - ros-jazzy-joint-state-publisher / -gui: 팔 없이 URDF 만 띄우는 display launch 용
+# - libserial-dev / libexpected-dev / librange-v3-dev: feetech_ros2_driver 의 빌드 의존성
+# ROS apt 저장소는 위 ROS2 Jazzy 블록이 등록하므로 그 뒤에 와야 한다.
+# 캐시 무효화 영향 최소화를 위해 이미지 말미에 배치.
+# ========================================
+RUN if [ "$INSTALL_ROS" = "true" ]; then \
+        set -eux; \
+        apt-get update; \
+        apt-get install -y \
+            python3-colcon-common-extensions \
+            python3-rosdep \
+            ros-jazzy-ros2-control \
+            ros-jazzy-ros2-controllers \
+            ros-jazzy-xacro \
+            ros-jazzy-joint-state-publisher \
+            ros-jazzy-joint-state-publisher-gui \
+            libserial-dev \
+            libexpected-dev \
+            librange-v3-dev; \
+        rm -rf /var/lib/apt/lists/*; \
+        [ -f /etc/ros/rosdep/sources.list.d/20-default.list ] || rosdep init; \
+        rosdep update --rosdistro jazzy || echo "rosdep update failed: run 'rosdep update' in the container"; \
+    else \
+        echo "INSTALL_ROS=false: skipping ros2_control packages"; \
+    fi
+
 WORKDIR /workspace
 
 # ========================================
