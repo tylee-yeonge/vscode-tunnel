@@ -37,3 +37,10 @@ services:
       # 호스트에서 만든 캘리브레이션 공유 (조립 가이드 6.3절 위치).
       # 하위 구조 robots/so_follower/<id>.json, teleoperators/so_leader/<id>.json 그대로 사용.
       - ~/Documents/so-arm101/calibration:/root/so-arm101/calibration
+    ports:
+      # foxglove_bridge (컨테이너 8765) 를 호스트 루프백 8766 에만 공개한다. Tailnet 노출은
+      # tailscale serve 가 이 루프백 포트를 https 로 프록시해 맡는다 (README "Foxglove 브리지" 절,
+      # UBUNTU_SETUP 3-9). Foxglove 웹앱은 https 페이지라 wss:// 만 허용하므로 TLS 가 필수다.
+      # 호스트 Tailnet 8765 는 study-timer-http 가 쓰므로 8766 이다. 127.0.0.1 바인딩이라
+      # LAN/외부에는 열리지 않는다.
+      - "127.0.0.1:8766:8765"
