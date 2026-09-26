@@ -266,6 +266,25 @@ RUN if [ "$INSTALL_ROS" = "true" ]; then \
         echo "INSTALL_ROS=false: skipping ros2_control packages"; \
     fi
 
+# ========================================
+# Foxglove 브리지 (INSTALL_ROS=true 일 때만)
+# 컨테이너에는 화면 (DISPLAY) 이 없어 RViz 를 띄울 수 없다. ROS2 토픽 (URDF, /joint_states,
+# 카메라) 을 보는 기본 경로는 foxglove_bridge 를 컨테이너에서 띄우고 맥북의 Foxglove Studio 로
+# 붙는 것이다 (WebSocket, 기본 포트 8765).
+# - ros-jazzy-foxglove-bridge: ros-jazzy-desktop 에 들어 있지 않다. 실행은
+#   ros2 launch foxglove_bridge foxglove_bridge_launch.xml
+# ROS apt 저장소는 위 ROS2 Jazzy 블록이 등록하므로 그 뒤에 와야 한다.
+# 캐시 무효화 영향 최소화를 위해 이미지 말미에 별도 레이어로 둔다.
+# ========================================
+RUN if [ "$INSTALL_ROS" = "true" ]; then \
+        set -eux; \
+        apt-get update; \
+        apt-get install -y ros-jazzy-foxglove-bridge; \
+        rm -rf /var/lib/apt/lists/*; \
+    else \
+        echo "INSTALL_ROS=false: skipping foxglove_bridge"; \
+    fi
+
 WORKDIR /workspace
 
 # ========================================
