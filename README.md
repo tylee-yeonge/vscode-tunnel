@@ -17,7 +17,7 @@ Mac(Apple Silicon)과 Ubuntu(x86_64) 모두 별도 수정 없이 동작합니다
 | 빌드 도구 | CMake, Ninja, GDB, build-essential |
 | SO-ARM101 지원 | `python3-venv`(lerobot venv 생성), `libavdevice60` / `libavfilter9`(torchcodec FFmpeg 런타임), alias `acl` / `so101-teleop` / `so101-help` (v1.15.0+) |
 | ros2_control 빌드 지원 | `colcon`, `rosdep`(init / update 완료), `ros2_control` / `ros2_controllers`, `xacro`, `joint_state_publisher`(-gui), feetech 드라이버 빌드 의존성 / **ROS2 가 설치되는 Linux 호스트 빌드에만 포함** (v1.18.0+) |
-| Foxglove 브리지 | `foxglove_bridge` (WebSocket 8765) — 헤드리스 컨테이너의 ROS2 토픽을 맥북 Foxglove Studio 로 시각화 / **ROS2 가 설치되는 Linux 호스트 빌드에만 포함** (v1.19.0+) |
+| Foxglove 브리지 | `foxglove_bridge` — 헤드리스 컨테이너의 ROS2 토픽을 맥북 Foxglove (웹앱 · 데스크톱) 로 시각화. 호스트 루프백 8766 공개 + `tailscale serve` wss / **ROS2 가 설치되는 Linux 호스트 빌드에만 포함** (v1.19.0+, wss 공개 v1.20.0+) |
 
 ---
 
@@ -555,10 +555,28 @@ docker exec vscode-tunnel bash -lc 'source /opt/ros/jazzy/setup.bash && ros2 pkg
 source /opt/ros/jazzy/setup.bash && ros2 launch foxglove_bridge foxglove_bridge_launch.xml
 ```
 
-브리지는 컨테이너 안 8765 포트에서 WebSocket 을 엽니다. 맥북에서는 VS Code 의 포트 포워딩
-(Ports 패널에 8765 추가) 뒤 Foxglove Studio 에서 `ws://localhost:8765` 로 엽니다. compose 에는
-포트를 공개하지 않습니다 — 호스트의 Tailnet 8765 는 `study-timer-http` 가 쓰고 있습니다
-(`docker-compose.tailscale.yml`).
+브리지는 컨테이너 안 8765 포트에서 WebSocket 을 엽니다. `docker-compose.so101.yml` 이 이를 호스트
+루프백 `127.0.0.1:8766` 에만 공개하고, Tailnet 노출은 `tailscale serve` 가 그 포트를 https 로
+프록시해 맡습니다. 맥북에서는 웹앱(app.foxglove.dev)이든 데스크톱 앱이든 같은 주소로 붙습니다.
+웹앱은 https 페이지라 `wss://` 만 허용하므로(`ws://` 원격은 브라우저가 차단) TLS 가 필수이고,
+Tailscale 이 발급하는 정식 인증서라 브라우저 경고가 없습니다. 호스트 Tailnet 8765 는
+`study-timer-http` 가 쓰므로 8766 입니다.
+
+```bash
+# 호스트에서 1회: 일반 사용자가 tailscale serve 를 만질 수 있게 (sudo 는 이때만)
+sudo tailscale set --operator=$USER
+# 호스트에서 1회: Tailnet https 8766 -> 호스트 루프백 8766 (재부팅 후에도 유지되는 영구 설정)
+tailscale serve --bg --https=8766 http://127.0.0.1:8766
+tailscale serve status
+# 맥북 Foxglove 의 Open connection -> Foxglove WebSocket 에 넣을 주소: wss://<아래 DNSName>:8766
+tailscale status --json | grep -m1 DNSName
+```
+
+전제: Tailnet 관리 콘솔에서 MagicDNS 와 HTTPS Certificates 가 켜져 있어야 합니다
+(`tailscale status --json` 의 `CertDomains` 가 비어 있지 않으면 됨). 브리지 3.x 는 Foxglove SDK
+프로토콜(`foxglove.sdk.v1`)만 받으므로 Foxglove 앱은 최신 버전이어야 합니다. VS Code 원격 터널의
+포트 전달(devtunnels 주소)은 GitHub 로그인 쿠키가 있는 브라우저 탭만 통과시켜 Foxglove 연결에는
+쓸 수 없습니다.
 
 ## 머신별 오버라이드 패턴
 

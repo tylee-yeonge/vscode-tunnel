@@ -1,5 +1,26 @@
 # Changelog
 
+## v1.20.0 (2026-09-26)
+
+### Added
+- `docker-compose.so101.yml` 에 `ports: 127.0.0.1:8766:8765` — `foxglove_bridge` 를 호스트 루프백에만 공개
+  - Tailnet 노출은 `tailscale serve --bg --https=8766 http://127.0.0.1:8766` 이 맡음 (호스트 1회 설정,
+    재부팅 후 유지). 웹앱(app.foxglove.dev)은 https 페이지라 `wss://` 만 허용하므로 TLS 가 필수이고,
+    Tailscale 발급 인증서로 브라우저 경고 없음. 데스크톱 앱도 같은 `wss://<MagicDNS 이름>:8766`
+  - 8766 인 이유: 호스트 Tailnet 8765 는 `study-timer-http` 가 사용 중
+  - VS Code 원격 터널의 포트 전달(devtunnels)은 GitHub 로그인 쿠키가 있는 브라우저 탭만 통과시켜
+    Foxglove 연결에 쓸 수 없음 — v1.19.0 README 의 포트 포워딩 안내를 이 방식으로 교체
+- `README.md` "Foxglove 브리지" 절과 포함 구성 표, `UBUNTU_SETUP.md` 3-9 에 절차 추가
+
+### Migration
+- 우분투 PC 에서 `./reload.sh` (compose 변경으로 컨테이너 1회 재생성, 이미지 재빌드 없음)
+- 호스트에서 1회: `sudo tailscale set --operator=$USER` 후 `tailscale serve --bg --https=8766 http://127.0.0.1:8766`
+  (Tailnet 에 MagicDNS + HTTPS Certificates 가 켜져 있어야 함). 확인:
+  ```bash
+  ss -ltn | grep 127.0.0.1:8766          # compose 매핑
+  tailscale serve status                 # https:8766 -> http://127.0.0.1:8766
+  ```
+
 ## v1.19.0 (2026-09-26)
 
 ### Added

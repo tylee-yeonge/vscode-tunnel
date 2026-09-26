@@ -206,6 +206,19 @@ docker exec vscode-tunnel so101-attach      # 팔(과 카메라)을 꽂은 뒤 �
 docker exec vscode-tunnel so101-attach list # 카메라 시리얼/USB 경로 확인 -> .env 의 SO101_CAM_*_ID 설정 (선택)
 ```
 
+### 3-9. Foxglove 브리지 Tailnet 공개 (선택, SO-ARM101 + Tailscale)
+컨테이너의 `foxglove_bridge`(ROS2 토픽 시각화)는 `docker-compose.so101.yml` 이 호스트 루프백
+`127.0.0.1:8766` 에만 공개한다. 맥북의 Foxglove 웹앱/데스크톱이 붙을 수 있도록 `tailscale serve` 로
+Tailnet https 8766 에 프록시한다 (웹앱은 `wss://` 만 허용). 전제: Tailnet 관리 콘솔에서 MagicDNS 와
+HTTPS Certificates 활성화. 상세는 README "Foxglove 브리지" 절.
+
+```bash
+sudo tailscale set --operator=$USER                          # 1회. 이후 tailscale serve 에 sudo 불필요
+tailscale serve --bg --https=8766 http://127.0.0.1:8766      # 1회. 재부팅 후에도 유지
+tailscale serve status
+tailscale status --json | grep -m1 DNSName                   # 맥북 Foxglove 에 넣을 wss://<이 이름>:8766
+```
+
 ## 4. 운영 팁
 
 ### 접속 전환
