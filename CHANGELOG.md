@@ -1,5 +1,24 @@
 # Changelog
 
+## v1.19.0 (2026-09-26)
+
+### Added
+- `Dockerfile` 말미에 Foxglove 브리지 블록 추가 (상위 레이어 캐시 무효화 없음)
+  - `ros-jazzy-foxglove-bridge`: 헤드리스 컨테이너(`DISPLAY` 없음)에서 RViz 대신 ROS2 토픽(URDF,
+    `/joint_states`, 카메라)을 맥북의 Foxglove Studio 로 보기 위한 WebSocket 브리지(기본 포트 8765).
+    `ros-jazzy-desktop` 에 들어 있지 않음
+  - ROS2 Jazzy 블록과 같은 `INSTALL_ROS=true` 조건으로 감싸 Mac 빌드에는 영향 없음
+  - compose 포트 공개는 하지 않음. 맥북에서는 VS Code 포트 포워딩(8765)으로 붙음. 호스트의 Tailnet
+    8765 는 `study-timer-http` 가 사용 중
+- `README.md` 의 포함 구성 표와 "Foxglove 브리지" 절에 안내 추가
+
+### Migration
+- 우분투 PC 에서 `./reload.sh` 로 이미지를 재빌드 (추가 레이어 1개만 새로 빌드됨). 컨테이너가 1회
+  재생성되어 터널이 잠시 끊김. 확인:
+  ```bash
+  docker exec vscode-tunnel bash -lc 'source /opt/ros/jazzy/setup.bash && ros2 pkg prefix foxglove_bridge'
+  ```
+
 ## v1.18.0 (2026-09-22)
 
 ### Added

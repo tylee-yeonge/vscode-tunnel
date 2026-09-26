@@ -17,6 +17,7 @@ Mac(Apple Silicon)과 Ubuntu(x86_64) 모두 별도 수정 없이 동작합니다
 | 빌드 도구 | CMake, Ninja, GDB, build-essential |
 | SO-ARM101 지원 | `python3-venv`(lerobot venv 생성), `libavdevice60` / `libavfilter9`(torchcodec FFmpeg 런타임), alias `acl` / `so101-teleop` / `so101-help` (v1.15.0+) |
 | ros2_control 빌드 지원 | `colcon`, `rosdep`(init / update 완료), `ros2_control` / `ros2_controllers`, `xacro`, `joint_state_publisher`(-gui), feetech 드라이버 빌드 의존성 / **ROS2 가 설치되는 Linux 호스트 빌드에만 포함** (v1.18.0+) |
+| Foxglove 브리지 | `foxglove_bridge` (WebSocket 8765) — 헤드리스 컨테이너의 ROS2 토픽을 맥북 Foxglove Studio 로 시각화 / **ROS2 가 설치되는 Linux 호스트 빌드에만 포함** (v1.19.0+) |
 
 ---
 
@@ -537,6 +538,27 @@ cd /workspace/so101_ws && colcon build --symlink-install
 > 동일 프로세스에서 두 버전을 섞으면 충돌 소지가 있습니다.
 
 ---
+
+### Foxglove 브리지 (v1.19.0+)
+
+컨테이너에는 화면(`DISPLAY`)이 없어 RViz 를 띄울 수 없습니다. ROS2 토픽(URDF, `/joint_states`,
+카메라)을 보는 기본 경로는 컨테이너에서 `foxglove_bridge` 를 띄우고 맥북의
+[Foxglove Studio](https://foxglove.dev/) 로 붙는 것입니다. `ros-jazzy-foxglove-bridge` 는
+`ros-jazzy-desktop` 에 들어 있지 않아 이미지에 따로 포함하며, ROS2 와 같은 조건(`INSTALL_ROS=true`)
+에서만 설치됩니다.
+
+```bash
+# 설치 확인
+docker exec vscode-tunnel bash -lc 'source /opt/ros/jazzy/setup.bash && ros2 pkg prefix foxglove_bridge'
+
+# 브리지 실행 (컨테이너 안)
+source /opt/ros/jazzy/setup.bash && ros2 launch foxglove_bridge foxglove_bridge_launch.xml
+```
+
+브리지는 컨테이너 안 8765 포트에서 WebSocket 을 엽니다. 맥북에서는 VS Code 의 포트 포워딩
+(Ports 패널에 8765 추가) 뒤 Foxglove Studio 에서 `ws://localhost:8765` 로 엽니다. compose 에는
+포트를 공개하지 않습니다 — 호스트의 Tailnet 8765 는 `study-timer-http` 가 쓰고 있습니다
+(`docker-compose.tailscale.yml`).
 
 ## 머신별 오버라이드 패턴
 
