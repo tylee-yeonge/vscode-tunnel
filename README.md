@@ -236,11 +236,11 @@ Mac 등 HF 모델을 사용하지 않는 호스트에서는 빈 볼륨만 생성
 
 ---
 
-## USB 카메라 (ELP 스테레오 · 손목 카메라)
+## USB 카메라 (전체 뷰 · 손목 카메라)
 
 카메라 패스스루는 `docker-compose.so101.yml` 이 담당합니다. `c 81:*` cgroup 규칙으로 video4linux
-접근을 열어 두고, 컨테이너 안에서 `so101-attach` 가 USB 시리얼로 카메라를 찾아
-`/dev/so101_cam_overview`(ELP 스테레오), `/dev/so101_cam_wrist`(손목) 노드를 만듭니다.
+접근을 열어 두고, 컨테이너 안에서 `so101-attach` 가 USB 시리얼 번호 또는 USB 인터페이스 경로로
+카메라를 찾아 `/dev/so101_cam_overview`(전체 뷰), `/dev/so101_cam_wrist`(손목) 노드를 만듭니다.
 
 컨테이너 생성 시점에 `/dev/videoN` 번호를 고정하는 `devices:` 매핑은 쓰지 않습니다. 카메라를
 다시 꽂아 호스트 번호가 바뀌면 정적 노드는 `ENXIO` 로 죽기 때문입니다. 설정값과 사용법은 아래
@@ -361,7 +361,7 @@ so101-attach
 # [so101-attach] /dev/so101_follower -> ttyACM0 (166:0)
 # [so101-attach] /dev/so101_leader -> ttyACM1 (166:1)
 # [so101-attach] /dev/so101_cam_wrist -> video2 (81:2)       <- 6번에서 카메라를 설정한 경우
-# [so101-attach] /dev/so101_cam_overview -> video0 (81:0)
+# [so101-attach] /dev/so101_cam_overview -> video4 (81:4)
 
 # 3) 텔레옵: acl 로 venv 를 켠 뒤 alias 실행 (포트와 캘리브레이션 위치는 환경변수로 이미 잡혀 있음)
 acl
@@ -384,23 +384,27 @@ lerobot-teleoperate \
 **6. 카메라** (손목 카메라 + 전체 뷰 카메라, 선택):
 
 카메라도 같은 attach 방식으로 넘깁니다. 식별값은 보드처럼 USB 시리얼 번호를 쓰면 포트가
-바뀌어도 잡힙니다. 다만 웹캠 시리얼은 모델 공통값인 경우가 많아(아래 예시의 두 값도 그렇습니다)
-같은 모델을 2대 쓰면 구분이 안 되므로, 그때만 USB 인터페이스 경로(`usb=` 값)를 적고 그
-카메라는 같은 포트에 꽂습니다. UVC 카메라는 노드가 2개(캡처 + 메타데이터) 생기는데 캡처
-노드만 잡습니다.
+바뀌어도 잡힙니다. 다만 웹캠 시리얼은 모델 공통값인 경우가 많아 같은 모델을 2대 쓰면 구분이
+안 되므로, 그때는 USB 인터페이스 경로(`usb=` 값)를 적고 각 카메라를 같은 포트에 꽂습니다.
+아래 예시가 그 경우입니다(같은 모델 2대라 `serial=` 이 같음). UVC 카메라는 노드가 2개(캡처 +
+메타데이터) 생기는데 캡처 노드만 잡습니다.
 
 ```bash
 # 값 확인 (컨테이너 안, 카메라 연결 후). serial= 또는 usb= 값을 .env 에 적는다
 so101-attach list
 # cameras, capture nodes only (value for SO101_CAM_WRIST_ID / SO101_CAM_OVERVIEW_ID: serial or usb):
-#   video0 serial=01.00.00 usb=1-2.2:1.0 name="3D Global Shutter Camera: 3D Gl"
-#   video2 serial=200901010001 usb=1-7.1:1.0 name="USB Camera: USB Camera"
+#   video2 serial=200901010001 usb=1-4:1.0 name="USB Camera: USB Camera"
+#   video4 serial=200901010001 usb=1-3:1.0 name="USB Camera: USB Camera"
 ```
 
 ```env
-SO101_CAM_WRIST_ID=200901010001
-SO101_CAM_OVERVIEW_ID=01.00.00
+SO101_CAM_WRIST_ID=1-4:1.0
+SO101_CAM_OVERVIEW_ID=1-3:1.0
 ```
+
+시리얼이 같은 두 카메라 중 어느 쪽이 손목인지는 한쪽 USB 를 뽑고 `so101-attach list` 를 다시
+실행해 사라지는 항목으로 판별합니다. 경로로 식별하는 동안에는 두 카메라의 포트를 서로 바꿔
+꽂으면 역할도 뒤바뀌므로 꽂는 포트를 고정합니다.
 
 ```bash
 ./start.sh          # .env 변경으로 컨테이너 1회 재생성
@@ -410,15 +414,15 @@ so101-attach        # 이후 카메라 노드 2줄이 추가로 출력됨
 lerobot 명령에는 노드 경로를 그대로 넣습니다. 요청한 fps 와 크기는 카메라가 지원하는
 값과 정확히 같아야 하며(lerobot 이 실제 값과 대조한 뒤 예외), 지원 값은 호스트에서
 `v4l2-ctl -d /dev/videoN --list-formats-ext` 로 확인합니다. 아래는 이 저장소 작성
-환경의 값입니다. 손목(Realtek USB Camera)은 MJPG 640x480 @ 30fps, 전체 뷰(ELP
-스테레오)는 좌우 병치 MJPG 1280x480 @ 60fps 이며 ELP 는 30fps 를 지원하지 않습니다.
+환경의 값입니다. 손목과 전체 뷰 모두 같은 모델(Realtek USB Camera, `0bda:5844`)로, MJPG 는
+1280x720 까지 모든 해상도에서 30fps 만 지원합니다.
 
 ```bash
 lerobot-record \
     --robot.type=so101_follower \
     --robot.port=$FOLLOWER_PORT \
     --robot.id=so101_follower_01 \
-    --robot.cameras="{ wrist: {type: opencv, index_or_path: /dev/so101_cam_wrist, width: 640, height: 480, fps: 30, fourcc: MJPG}, overview: {type: opencv, index_or_path: /dev/so101_cam_overview, width: 1280, height: 480, fps: 60, fourcc: MJPG} }" \
+    --robot.cameras="{ wrist: {type: opencv, index_or_path: /dev/so101_cam_wrist, width: 640, height: 480, fps: 30, fourcc: MJPG}, overview: {type: opencv, index_or_path: /dev/so101_cam_overview, width: 640, height: 480, fps: 30, fourcc: MJPG} }" \
     --teleop.type=so101_leader \
     --teleop.port=$LEADER_PORT \
     --teleop.id=so101_leader_01 \
